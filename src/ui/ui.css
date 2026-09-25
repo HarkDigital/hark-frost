@@ -33,6 +33,9 @@
   --ch-y: max(20px, env(safe-area-inset-top, 0px));
   --ch-by: max(20px, env(safe-area-inset-bottom, 0px));
   --ch-h: 44px;
+  /* hairline pips: upcoming / passed */
+  --pip-idle: rgba(255, 255, 255, 0.5);
+  --pip-past: rgba(255, 255, 255, 0.74);
 }
 
 /* ---------------- wordmark + concept tag (src/ui/mark.ts) ---------------- */
@@ -100,12 +103,30 @@
 .ch-scrim--top {
   top: 0;
   height: calc(var(--safe-top) + 8px);
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.5) 52%, rgba(0, 0, 0, 0) 100%);
+  /* dense through the wordmark's tag line (~50% down), then eased out */
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.84) 0%,
+    rgba(0, 0, 0, 0.64) 50%,
+    rgba(0, 0, 0, 0.3) 74%,
+    rgba(0, 0, 0, 0) 100%
+  );
 }
+/* the bottom band runs taller than the chrome row: the hero's close-ups put
+   lit glass right under the readout (46–64px up), so it stays dense through
+   the readout, then eases out (≥ 4.5:1 over the brightest 5% of the glass) */
 .ch-scrim--bottom {
   bottom: 0;
-  height: calc(var(--safe-bottom) + 8px);
-  background: linear-gradient(0deg, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.44) 52%, rgba(0, 0, 0, 0) 100%);
+  height: calc(var(--safe-bottom) + 44px);
+  background: linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.86) 0%,
+    rgba(0, 0, 0, 0.7) 30%,
+    rgba(0, 0, 0, 0.6) 50%,
+    rgba(0, 0, 0, 0.34) 70%,
+    rgba(0, 0, 0, 0.12) 86%,
+    rgba(0, 0, 0, 0) 100%
+  );
 }
 
 /* the frosted chip every control sits on */
@@ -496,7 +517,7 @@
   font-size: 10.5px;
 }
 .ch-read-b {
-  color: var(--fr-text-2);
+  color: #ffffff;
 }
 .ch-read.is-cue .ch-read-n {
   color: #ffffff;
@@ -524,7 +545,7 @@
   display: block;
   width: 12px;
   height: 1px;
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--pip-idle);
   transition:
     width 0.5s cubic-bezier(0.16, 1, 0.3, 1),
     height 0.3s ease,
@@ -532,7 +553,7 @@
     box-shadow 0.3s ease;
 }
 .ch-pip.is-past i {
-  background: rgba(255, 255, 255, 0.74);
+  background: var(--pip-past);
 }
 .ch-pip:hover i {
   background: #ffffff;
@@ -808,6 +829,11 @@ html.menu-open #stages {
   }
   .ch-top .ch-menu-btn {
     display: inline-flex;
+  }
+  /* phones: the upcoming pips a touch brighter over the lit close-ups */
+  :root {
+    --pip-idle: rgba(255, 255, 255, 0.62);
+    --pip-past: rgba(255, 255, 255, 0.82);
   }
 }
 @media (max-width: 440px) {
@@ -1632,5 +1658,148 @@ html.no-webgl #stages {
   }
   .fb-link {
     padding: 0 8px;
+  }
+}
+
+/* ---------------- forced colors (Windows High Contrast) ----------------
+   Forced colors paint author backgrounds with Canvas and drop box-shadows
+   and gradients, which is how the chrome draws its bars, beads, rims and
+   the current-chapter pip. Redraw each of them in system colours (these
+   are kept as specified), outline the chips, and give the gradient-clipped
+   words back their text colour. */
+@media (forced-colors: active) {
+  /* chips: an opaque surface (no grain, no rim) with an outline; the
+     WebGL scene is not recoloured, so nothing may rely on it being dark */
+  .ch-chip,
+  .ch-tile,
+  .rot-card,
+  .fb-tile,
+  .fb-live,
+  .fb-sec--work li,
+  .fallback-copy button {
+    background: Canvas;
+    border: 1px solid CanvasText;
+  }
+  button.ch-chip,
+  .fallback-copy button {
+    background: ButtonFace;
+    border-color: ButtonText;
+  }
+  .ch-tile::after {
+    display: none;
+  }
+  .ch-mark-svg,
+  .fb-tile-svg,
+  .fb-foot-svg {
+    color: CanvasText;
+    filter: none;
+  }
+  /* the readout and pips sit on their own surface */
+  .ch-prog {
+    padding: 3px 0 0 8px;
+    background: Canvas;
+    border-radius: 8px;
+  }
+  .ch-cta.hud-btn,
+  .ch-menu .hud-btn,
+  .rot-go.hud-btn,
+  .fb-cta.hud-btn {
+    border: 1px solid LinkText;
+  }
+  .rot-go.hud-btn {
+    border-color: ButtonText;
+  }
+  /* the wordmark's glass bead: show the real period instead */
+  .wm-dot {
+    width: auto;
+    height: auto;
+    margin: 0;
+    border-radius: 0;
+    color: inherit;
+    background: none;
+    overflow: visible;
+    vertical-align: baseline;
+  }
+  /* the chapter you are in, under the nav link */
+  .ch-link::after {
+    background: Highlight;
+  }
+  /* chapter pips: upcoming / passed bars in CanvasText, the current one a
+     longer, thicker Highlight bar; hover and keyboard focus light up too */
+  .ch-pip i,
+  .ch-pip.is-past i {
+    height: 2px;
+    background: CanvasText;
+  }
+  .ch-pip:hover i,
+  .ch-pip:focus-visible i {
+    height: 2px;
+    background: Highlight;
+  }
+  .ch-pip.is-on i {
+    height: 4px;
+    background: Highlight;
+  }
+  /* Sound: the three bars and the mute slash */
+  .ch-eq i,
+  .ch-eq b,
+  .ch-sound[aria-pressed='true'] .ch-eq i {
+    background: ButtonText;
+  }
+  /* Motion: the turntable ring and bead (filled while on) */
+  .ch-orbit-r,
+  .ch-motion[aria-pressed='true'] .ch-orbit-r {
+    stroke: ButtonText;
+  }
+  .ch-orbit-b {
+    fill: ButtonFace;
+    stroke: ButtonText;
+  }
+  .ch-motion[aria-pressed='true'] .ch-orbit-b {
+    fill: ButtonText;
+    stroke: ButtonText;
+  }
+  /* menu sheet + rotate card: an opaque surface, no watermark behind the list */
+  .ch-menu,
+  .lowfx .ch-menu,
+  .rot,
+  .lowfx .rot {
+    background: Canvas;
+  }
+  .ch-menu-mark,
+  .fb-mark {
+    display: none;
+  }
+  .ch-ml.is-now .ch-ml-name,
+  .rot-title em {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+  .ch-ml.is-now .ch-ml-n::before {
+    background: Highlight;
+  }
+  .rot-body,
+  .rot-screen {
+    fill: Canvas;
+    stroke: CanvasText;
+  }
+  .rot-shine,
+  .rot-arc,
+  .rot-arc-h {
+    stroke: CanvasText;
+  }
+  /* loader: the drawn outline and its filling face */
+  .ld-line g {
+    stroke: CanvasText;
+  }
+  .ld-face g {
+    fill: CanvasText;
+  }
+  .ld-glow {
+    display: none;
+  }
+  /* static page hairlines */
+  .fb-k i {
+    background: CanvasText;
   }
 }

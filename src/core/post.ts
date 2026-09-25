@@ -313,6 +313,15 @@ export class Post {
     return Promise.all(mats.map(m => this.renderer.compileAsync(new THREE.Mesh(quad.geometry, m), cam).catch(() => {})))
   }
 
+  /**
+   * True for targets that hold the FRAME (the scene target and the composer's
+   * ping-pong targets), false for three's transmission buffer. Materials that
+   * draw different strengths in the frame vs the glass buffer test with this.
+   */
+  isFrameTarget(rt: THREE.WebGLRenderTarget | null) {
+    return rt === this.scenePass.target || rt === this.composer.renderTarget1 || rt === this.composer.renderTarget2
+  }
+
   /** 4x MSAA on the scene render unless the frame is already supersampled */
   static samplesFor(dpr: number) {
     return dpr < 1.75 ? 4 : 0

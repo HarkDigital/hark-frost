@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
 import { rng } from '../../core/math'
+import { flattenCaps, smoothSides } from '../../kit/glass'
 
 /*
  * THE BREATH PANE — one large sheet of cold glass standing in the black room,
@@ -167,18 +168,22 @@ const FRAG = /* glsl */ `
     return (broad + core) * uLight;
   }
 
-  // a drip trail below (d.x, d.y), d.z long, d.w half-wide; head = its bead
+  // a drip below (d.x, d.y), d.z long, d.w half-wide where it leaves the
+  // stroke: the trail tapers as the drop sheds water, the head is a soft,
+  // slightly elongated bead barely wider than the trail (no pin)
   float drip(vec4 d, vec2 P, out float head, out vec2 hn) {
     float dy = d.y - P.y;
-    float wob = 0.018 * sin(dy * 7.0 + d.x * 5.0) * smoothstep(0.0, 0.35, dy);
+    float len = max(d.z, 1e-4);
+    float wob = 0.012 * sin(dy * 8.0 + d.x * 5.0) * smoothstep(0.0, 0.3, dy);
     float xc = d.x + wob;
-    float w = d.w * (0.5 + 0.3 * smoothstep(0.0, 0.2, dy));
-    float trail = (1.0 - smoothstep(w * 0.6, w, abs(P.x - xc))) * step(0.0, dy) * (1.0 - smoothstep(d.z - 0.02, d.z, dy));
-    float hwob = 0.018 * sin(d.z * 7.0 + d.x * 5.0) * smoothstep(0.0, 0.35, d.z);
-    vec2 hp = vec2(d.x + hwob, d.y - d.z);
-    float hr = d.w * 1.35 * smoothstep(0.0, 0.05, d.z);
-    vec2 o = (P - hp) / max(hr, 1e-4);
-    head = (1.0 - smoothstep(0.8, 1.0, length(o))) * step(1e-4, hr);
+    float u = clamp(dy / len, 0.0, 1.0);
+    float w = d.w * mix(1.0, 0.7, u);
+    float trail = (1.0 - smoothstep(w * 0.35, w, abs(P.x - xc))) * step(0.0, dy) * (1.0 - smoothstep(len - d.w * 1.5, len, dy));
+    float hwob = 0.012 * sin(len * 8.0 + d.x * 5.0) * smoothstep(0.0, 0.3, len);
+    float hr = d.w * 0.92 * smoothstep(0.0, 0.05, d.z);
+    vec2 hp = vec2(d.x + hwob, d.y - len + hr * 0.3);
+    vec2 o = (P - hp) / vec2(max(hr, 1e-4), max(hr * 1.3, 1e-4));
+    head = (1.0 - smoothstep(0.45, 1.0, length(o))) * step(1e-4, hr);
     hn = o;
     return trail * step(1e-4, d.z);
   }
@@ -197,19 +202,26 @@ const FRAG = /* glsl */ `
     float shrink = max(0.1, 1.0 - 0.45 * uRefog);
     float Rn = mix(8.0, m.r, inR) / shrink;
     float Rc = mix(8.0, m.b, inR) / shrink;
-    float aaN = fwidth(Rn) * 0.75 + 0.015;
-    float aaC = fwidth(Rc) * 0.75 + 0.015;
+    // (capped: where the field jumps to its far value at the mask's box edge,
+    // an unbounded fwidth would open a faint clear line)
+    float aaN = min(fwidth(Rn) * 0.75, 0.3) + 0.015;
+    float aaC = min(fwidth(Rc) * 0.75, 0.3) + 0.015;
     float wN = uWrite + uCapN * min(1.0, uWrite / max(uCapN, 1e-4)) * sqrt(max(0.0, 1.0 - min(Rn * Rn, 1.0)));
     float wC = uCoWrite + uCapC * min(1.0, uCoWrite / max(uCapC, 1e-4)) * sqrt(max(0.0, 1.0 - min(Rc * Rc, 1.0)));
     float revN = smoothstep(0.0, uCapN * 0.3 + 1e-4, wN - m.g) * step(1e-4, uWrite);
     float revC = smoothstep(0.0, uCapC * 0.3 + 1e-4, wC - m.a) * step(1e-4, uCoWrite);
-    float clearN = (1.0 - smoothstep(1.0 - aaN, 1.0 + aaN, Rn)) * revN;
+    // a fingertip's wiped edge is ragged: beads of the pushed-aside water bite into it
+    vec4 dE = texture2D(uDrops, P * uDropScale * 0.6 + vec2(0.13, 0.71));
+    float edgeN = 1.0 - 0.12 * dE.z - 0.04 * noise(P * 34.0);
+    float clearN = (1.0 - smoothstep(edgeN - aaN, edgeN + aaN, Rn)) * revN;
     float clearC = (1.0 - smoothstep(1.0 - aaC, 1.0 + aaC, Rc)) * revC;
+    // a soft core: the pad of the finger leaves a thin film toward its edges
+    float cN = clearN * (1.0 - 0.16 * smoothstep(0.55, 1.0, Rn));
     // the fog re-forms: fine droplets nucleate inside the strokes
     float nuc = smoothstep(0.0, 0.7, uRefog * 1.25 - fbm(P * 11.0) * 0.55);
-    float c = max(clearN, clearC) * (1.0 - nuc);
-    // faint wipe streaks along each stroke (they follow the centreline)
-    float streak = 0.5 + 0.5 * sin(Rn * 17.0 + fbm(P * 3.0) * 6.0);
+    float c = max(cN, clearC) * (1.0 - nuc);
+    // faint wipe streaks along each stroke (the fingertip's ridges follow the centreline)
+    float streak = 0.5 + 0.5 * sin(Rn * 19.0 + fbm(P * 3.0) * 6.0);
     // drips
     float h0, h1; vec2 n0, n1;
     float tr = max(drip(uDrip0, P, h0, n0), drip(uDrip1, P, h1, n1));
@@ -238,11 +250,11 @@ const FRAG = /* glsl */ `
     gl = gl * gl; gl = gl * gl;
     float drop = lens * (1.0 - 0.75 * rim) + gl * Bd * fk * 2.2;
     fog = mix(fog, drop, dA.z * 0.45 * (1.0 - 0.85 * uHeavy));
-    // the pushed-aside water: a band of bigger beads hugging each stroke
-    float band = (1.0 - smoothstep(1.15, 2.2, Rn)) * smoothstep(0.95, 1.1, Rn) * revN * (1.0 - uRefog);
+    // the pushed-aside water: bigger beads crowd each stroke's edge, a few
+    // left standing just inside it
+    float band = smoothstep(0.66, 0.9, Rn) * (1.0 - smoothstep(1.1, 1.55, Rn)) * revN * (1.0 - uRefog) * inR;
     vec2 nb = dB.xy * 2.0 - 1.0;
-    float beadB = wall(qV - nb * 0.25, 0.05) * 0.45 * (1.0 - 0.9 * smoothstep(0.5, 1.0, length(nb)));
-    fog = mix(fog, beadB, dB.z * band * 0.8);
+    float beadB = wall(qV - nb * 0.25, 0.05) * 0.42 * (1.0 - 0.8 * smoothstep(0.5, 1.0, length(nb)));
 
     // the breath: fog blooms outward from a point (uBloom = the front's radius)
     float front = uBloom - length((P - uBloomAt) * vec2(0.8, 1.0)) + (fbm(P * 1.4 + 3.0) - 0.5) * 1.1;
@@ -253,15 +265,18 @@ const FRAG = /* glsl */ `
     float s = dot(P, vec2(0.91, 0.41)) - uSweep;
     // the freshest stretch behind the fingertip is still wet: a touch brighter
     float wet = (1.0 - smoothstep(0.0, uCapN * 5.0, uWrite - m.g)) * (1.0 - step(0.999, uWrite));
-    float clearL = Bs * 0.93 * (1.0 - 0.035 * streak * smoothstep(0.25, 0.7, Rn)) * (1.0 + 0.16 * wet) + exp(-s * s / 0.0012) * 0.55 * uSweepK;
+    float clearL = Bs * 0.93 * (1.0 - 0.05 * streak * smoothstep(0.2, 0.7, Rn)) * (1.0 + 0.16 * wet) + (exp(-s * s / 0.0012) * 0.5 + exp(-s * s / 0.012) * 0.07) * uSweepK;
     float glassL = Bs * 0.93 + exp(-s * s / 0.0012) * 0.4 * uSweepK;
     float L = mix(glassL, fog + exp(-s * s / 0.6) * 0.022 * uSweepK, dens);
     L = mix(L, clearL, c * dens);
-    // the meniscus: a thin bright bead line along the stroke edges
-    float men = exp(-(Rn - 1.12) * (Rn - 1.12) / 0.006) * revN * (1.0 - uRefog) * inR;
-    L += men * (0.16 * Bs + 0.01) * dens;
-    // drip beads: little lenses
-    float beadL = wall(qV - bn * 0.3, 0.02) * (1.0 - 0.85 * smoothstep(0.55, 1.0, length(bn))) + max(dot(bn, vec2(-0.55, 0.83)), 0.0) * 0.12;
+    // the beads along the wiped edge (over fog and clear glass alike)
+    L = mix(L, beadB, smoothstep(0.4, 0.8, dB.z) * band * (1.0 - nuc) * dens * 0.7);
+    // the meniscus: a faint bright rim along the ragged edge
+    float me = Rn - edgeN - 0.1;
+    float men = exp(-me * me / 0.006) * revN * (1.0 - uRefog) * inR;
+    L += men * (0.1 * Bs + 0.008) * dens;
+    // drip heads: soft little lenses
+    float beadL = wall(qV - bn * 0.16, 0.04) * (1.0 - 0.4 * smoothstep(0.5, 1.0, length(bn))) + max(dot(bn, vec2(-0.55, 0.83)), 0.0) * 0.05;
     L = mix(L, beadL, bead * dens);
 
     vec3 tint = mix(vec3(0.93, 0.96, 1.0), vec3(1.0), c);
@@ -310,13 +325,17 @@ export function makePane(mobile: boolean): Pane {
     bevelEnabled: true,
     bevelThickness: BEVEL,
     bevelSize: BEVEL * 0.9,
-    bevelSegments: mobile ? 4 : 7,
+    bevelSegments: mobile ? 6 : 8,
     curveSegments: 10,
     steps: 1,
   })
   ex.translate(0, 0, -PD / 2)
   const slabGeo = toCreasedNormals(ex, Math.PI / 4.5)
   ex.dispose()
+  // consistent smooth bevel normals (creased-only normals zigzag the strip
+  // reflections into a broken hairline) and flat caps
+  smoothSides(slabGeo)
+  flattenCaps(slabGeo)
   const hidden = new THREE.MeshBasicMaterial({ visible: false })
   // polished edges: black glass with crisp studio reflections. Not
   // transmissive on purpose — behind a 2 px bevel there is only black, and a

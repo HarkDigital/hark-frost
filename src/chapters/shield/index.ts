@@ -5,72 +5,82 @@ import { clamp, ease, lerp, segment, smoothstep } from '../../core/math'
 import { nextFrame } from '../../core/yield'
 import { SECURITY, STATS } from '../../content'
 import { G, polished } from '../../kit/glass'
-import { buildWeb, webGeometry, webMaterial, type V2 } from './web'
-import { faceMaterial, siteTexture, type FaceUniforms } from './site'
-import { HIDDEN, laminateMaterials, rimMaterial, slab, type LaminateUniforms } from './laminate'
+import { buildWeb, webGeometry, webMaterial, type V2, type WebUniforms } from './web'
+import { VEIL_GLSL, faceMaterial, plateTexture, type FaceUniforms } from './site'
+import { HIDDEN, rimMaterial, slab } from './plate'
 import './shield.css'
 
 /*
  * LAMINATED — "Hacked? Breathe."
  *
- * "Your site" is a pane of frosted glass lit from behind like a light box,
- * a minimal website cut into it as clear grooves. Black all around.
+ * "Your site" is a thick plate of laminated, sandblasted glass lit from
+ * behind: a padlock and yoursite.com cut into it in polished clear letters,
+ * a double hairline border, 24 hour ticks along its foot. Black all around.
+ * Nothing slides in to save it: the plate heals itself, the way frost forms.
  *
- *   0.00–0.08  IN      the pane at rest, a cool backlight (the cut clears).
- *                      The eyebrow and "Hacked?" arrive from 0.06.
- *   0.08–0.30  IMPACT  the backlight turns a hostile red (the only red on the
- *                      site); a strike: a crisp shock ring, a crushed-white
- *                      point, and a spider-web fracture grows by scroll —
- *                      radials, concentric rings, forks. The pane dips and
- *                      HOLDS: laminated glass doesn't fall apart.
- *   0.30–0.60  BREATHE "Breathe." + the body in a frosted panel (settled at
- *                      the 0.45 landing). The red drains to cool white; the
- *                      cracks heal from the edges inward; a second, thicker
- *                      frosted pane — the new laminate — slides in front, its
- *                      polished edges catching a sweep of the studio lights.
- *   0.56–0.68  THAW    the laminate's centre thaws to clear (a sandblasted
- *                      border stays frosted, a small Hark mark etched in its
- *                      corner): the healed site, crisp, behind new glass.
- *   0.58–0.95  STEADY  24/7 + its label + the emergency CTA (anchor 0.8); a
- *                      very slow breathing backlight — monitoring, never a flash.
+ *   0.00–0.08  IN      the plate at rest, a cool backlight. The eyebrow and
+ *                      "Hacked?" arrive from 0.06.
+ *   0.08–0.30  IMPACT  a strike: a crisp shock ring, a crushed-white point,
+ *                      and a spider-web fracture grows by scroll while red
+ *                      light (the only red on the site) floods the plate and
+ *                      leaks from every seam. The plate dips and HOLDS — the
+ *                      laminate's interlayer glows red along its edge.
+ *   0.30–0.37  HOLD    "Breathe." + the body settle over the broken plate
+ *                      (the 0.35 landing: the whole story in one frame).
+ *   0.37–0.50  FROST   the red drains to cool white; frost crystals grow off
+ *                      the seams from the impact outward — red seams become
+ *                      white crystalline ferns.
+ *   0.45–0.56  BREATH  condensation creeps in from the plate's edges on a
+ *                      feathered front and swallows the crystal web in a
+ *                      soft, beaded veil.
+ *   0.53–0.63  POLISH  a gliding highlight crosses the face (and runs along
+ *                      the polished edge); behind it the veil is gone and
+ *                      the sandblasted face is pristine, every cut razor sharp.
+ *   0.62–0.95  STEADY  24/7 + its label + the emergency CTA (anchor 0.8); the
+ *                      healed plate glows steady and cool while one hairline
+ *                      of light crosses it, lighting the hour ticks it passes.
  *
- * Everything derives from `local`; frame.time only drives idle drift and the
- * breathing light (both off / frozen under reduced motion or Motion off).
+ * Everything derives from `local` (no time-driven motion at all). Reduced
+ * motion / Motion off: no dip, no shock ring, no pointer parallax.
  */
 
 const W = 3.2
 const H = 2.0
-const RADIUS = 0.07
-const SITE_DEPTH = 0.07
-const SITE_BEVEL = 0.022
-const FRONT = SITE_DEPTH / 2 + SITE_BEVEL
-const LAM_DEPTH = 0.15
-const LAM_BEVEL = 0.034
-const LAM_GAP = 0.05
-const LAM_Z = FRONT + LAM_GAP + LAM_DEPTH / 2 + LAM_BEVEL
+const RADIUS = 0.08
+const DEPTH = 0.1
+const BEVEL = 0.03
+const FRONT = DEPTH / 2 + BEVEL
 const IMPACT: V2 = [0.66, 0.2]
 const STAT = STATS.find(s => s.value === '24/7') ?? STATS[STATS.length - 1]
 
 const T = {
   strike: 0.08,
+  red1: 0.19,
   grown: 0.26,
   /** copy: 'Breathe.' + body */
   breathe: 0.3,
-  drain0: 0.3,
-  drain1: 0.42,
-  heal0: 0.31,
-  heal1: 0.46,
-  slide0: 0.33,
-  slide1: 0.53,
-  thaw0: 0.55,
-  thaw1: 0.68,
-  handoff: 0.58,
+  drain0: 0.37,
+  drain1: 0.47,
+  cryst0: 0.37,
+  cryst1: 0.5,
+  frost0: 0.45,
+  frost1: 0.555,
+  polish0: 0.53,
+  polish1: 0.63,
+  handoff: 0.62,
+  scan0: 0.65,
+  scan1: 0.93,
   out: 0.95,
 }
 
 const COOL = new THREE.Color(G.ice)
 const RED = new THREE.Color(G.ember)
 const WHITE = new THREE.Color(G.white)
+/** the seams' core and the edge light, warmed by the hostile light */
+const HOT = new THREE.Color('#ffd6cf')
+const RIM_HOT = new THREE.Color('#ffc4bc')
+const CRUSH_HOT = new THREE.Color('#ffd2cc')
+const HEAD = new THREE.Color(1, 0.92, 0.88)
 
 // ------------------------------------------------------------------ camera
 
@@ -95,36 +105,40 @@ interface Key {
   yaw: number
   pitch: number
   fill: number
-  /** subject centre offset (pane units) */
+  /** subject centre offset (plate units) */
   s: [number, number, number]
 }
 
 const KEYS: Key[] = [
   { l: 0.0, yaw: -0.5, pitch: 0.08, fill: 0.84, s: [0, 0, 0] },
   { l: T.strike, yaw: -0.44, pitch: 0.07, fill: 0.88, s: [0.04, 0.02, 0] },
-  // lean in toward the strike (a macro push), never across the copy
+  // lean in toward the strike (a macro push), never across the copy; hold it through the landing
   { l: T.grown, yaw: -0.36, pitch: 0.06, fill: 1.0, s: [0.22, 0.06, 0] },
-  { l: 0.4, yaw: -0.46, pitch: 0.07, fill: 0.9, s: [0.05, 0.0, 0.1] },
-  { l: 0.62, yaw: -0.4, pitch: 0.07, fill: 0.9, s: [0.0, 0.0, 0.12] },
-  { l: 1.0, yaw: -0.3, pitch: 0.06, fill: 0.9, s: [0.0, 0.0, 0.12] },
+  { l: T.drain0, yaw: -0.38, pitch: 0.06, fill: 1.0, s: [0.2, 0.05, 0] },
+  // ease back to the whole plate while it frosts over and is polished
+  { l: 0.52, yaw: -0.46, pitch: 0.07, fill: 0.9, s: [0.04, 0.0, 0] },
+  { l: 0.66, yaw: -0.4, pitch: 0.07, fill: 0.9, s: [0.0, 0.0, 0] },
+  { l: 1.0, yaw: -0.3, pitch: 0.06, fill: 0.9, s: [0.0, 0.0, 0] },
 ]
 const KEYS_TALL: Key[] = [
   { l: 0.0, yaw: -0.34, pitch: 0.07, fill: 0.9, s: [0, 0, 0] },
   { l: T.strike, yaw: -0.3, pitch: 0.06, fill: 0.92, s: [0.02, 0.02, 0] },
   { l: T.grown, yaw: -0.24, pitch: 0.05, fill: 1.0, s: [0.18, 0.06, 0] },
-  { l: 0.4, yaw: -0.32, pitch: 0.06, fill: 0.94, s: [0.04, 0, 0.1] },
-  { l: 0.62, yaw: -0.28, pitch: 0.06, fill: 0.94, s: [0, 0, 0.12] },
-  { l: 1.0, yaw: -0.2, pitch: 0.05, fill: 0.94, s: [0, 0, 0.12] },
+  { l: T.drain0, yaw: -0.26, pitch: 0.05, fill: 1.0, s: [0.16, 0.05, 0] },
+  { l: 0.52, yaw: -0.32, pitch: 0.06, fill: 0.94, s: [0.03, 0, 0] },
+  { l: 0.66, yaw: -0.28, pitch: 0.06, fill: 0.94, s: [0, 0, 0] },
+  { l: 1.0, yaw: -0.2, pitch: 0.05, fill: 0.94, s: [0, 0, 0] },
 ]
-/** the studio turn: strips glide along the polished edges */
+/** the studio turn: strips glide along the polished edges (and ride the polish) */
 const TURN: [number, number][] = [
   [0.0, 0.3],
   [T.strike, 0.15],
   [0.3, -0.1],
-  [0.36, 0.2],
-  [0.56, 1.25],
-  [0.7, 0.9],
-  [1.0, 0.75],
+  [T.drain0, -0.05],
+  [T.polish0, 0.2],
+  [T.polish1, 1.2],
+  [0.76, 0.95],
+  [1.0, 0.8],
 ]
 function envTurn(l: number) {
   for (let i = 0; i < TURN.length - 1; i++) {
@@ -136,6 +150,7 @@ function envTurn(l: number) {
 }
 
 const isTall = (frame: Frame) => frame.height > frame.width * 1.05
+const inOutSine = (t: number) => 0.5 - 0.5 * Math.cos(Math.PI * t)
 
 function regionFor(L: Layout, frame: Frame, out: Region) {
   const w = L.ok ? L.w : frame.width
@@ -185,7 +200,7 @@ function solvePose(l: number, frame: Frame, L: Layout, out: CameraPose): Region 
   const aspect = frame.width / Math.max(1, frame.height)
   const tanV = Math.tan(THREE.MathUtils.degToRad(fov / 2))
   const tanX = tanV * aspect
-  // the pane seen at an angle is narrower on screen: frame its projected width
+  // the plate seen at an angle is narrower on screen: frame its projected width
   const sw = W * Math.cos(yaw) + (isTall(frame) ? 0.22 : 0.5)
   const sh = H + 0.34
   const D = Math.max(sw / (2 * tanX * _r.fw * fill), sh / (2 * tanV * _r.fh * fill))
@@ -201,7 +216,7 @@ function solvePose(l: number, frame: Frame, L: Layout, out: CameraPose): Region 
   out.target.copy(out.position).addScaledVector(_fwd, D)
   out.fov = fov
   out.roll = 0
-  out.parallax = 0.16
+  out.parallax = frame.reducedMotion || frame.still ? 0 : 0.16
   return _r
 }
 
@@ -209,18 +224,13 @@ function solvePose(l: number, frame: Frame, L: Layout, out: CameraPose): Region 
 
 export default function create(): Chapter {
   const group = new THREE.Group()
-  /** the site pane + its cracks (dips on the strike) */
-  const site = new THREE.Group()
-  /** the new laminate (slides in) */
-  const lam = new THREE.Group()
-  lam.visible = false
-  group.add(site, lam)
+  /** the plate + its cracks (dips on the strike) */
+  const plate = new THREE.Group()
+  group.add(plate)
 
   let face: FaceUniforms | null = null
-  let lamU: LaminateUniforms | null = null
-  let webMat: THREE.ShaderMaterial | null = null
-  let siteRim: THREE.ShaderMaterial | null = null
-  let lamRim: THREE.ShaderMaterial | null = null
+  let web: WebUniforms | null = null
+  let rim: THREE.ShaderMaterial | null = null
 
   // DOM
   let copyA: HTMLElement
@@ -235,7 +245,6 @@ export default function create(): Chapter {
   const layout: Layout = { w: 1, h: 1, top: 90, bottom: 90, gutter: 32, copyRight: 0, copyTop: 0, ok: false }
   const scratch: CameraPose = { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 30, roll: 0, parallax: 0 }
   const tmpC = new THREE.Color()
-  const tmpC2 = new THREE.Color()
 
   function measure(stage: HTMLElement) {
     const cs = getComputedStyle(probe)
@@ -285,131 +294,118 @@ export default function create(): Chapter {
         ro.observe(copyB)
       } else window.addEventListener('resize', () => measure(stage))
 
-      // ---------------- the site pane: frosted face (opaque) + polished sides (glass)
+      // ---------------- the plate: sandblasted face (opaque) + polished sides (glass)
       const aniso = Math.min(8, ctx.renderer.capabilities.getMaxAnisotropy())
-      const tex = siteTexture(mobile, aniso)
-      const fm = faceMaterial(tex, W, H)
+      const fm = faceMaterial(plateTexture(mobile, aniso), W, H)
       face = fm.u
       face.uImpact.value.set(IMPACT[0], IMPACT[1])
-      const siteSides = polished({ thickness: 0.3 }).clone()
-      const siteGeo = slab(W, H, { radius: RADIUS, depth: SITE_DEPTH, bevel: SITE_BEVEL, segments: mobile ? 5 : 8 })
-      const siteMesh = new THREE.Mesh(siteGeo, [fm.mat, siteSides])
-      siteMesh.renderOrder = 1
-      siteRim = rimMaterial()
-      site.add(siteMesh, new THREE.Mesh(siteGeo, [HIDDEN, siteRim]))
+      const sides = polished({ thickness: 0.3 }).clone()
+      const geo = slab(W, H, { radius: RADIUS, depth: DEPTH, bevel: BEVEL, segments: mobile ? 6 : 10 })
+      const mesh = new THREE.Mesh(geo, [fm.mat, sides])
+      mesh.renderOrder = 1
+      rim = rimMaterial(DEPTH / 2)
+      plate.add(mesh, new THREE.Mesh(geo, [HIDDEN, rim]))
       await nextFrame()
 
-      // ---------------- the fracture (opaque list, after the face)
-      const web = buildWeb({ w: W, h: H, impact: IMPACT, radials: mobile ? 10 : 12, seed: 11 })
-      webMat = webMaterial()
-      const cracks = new THREE.Mesh(webGeometry(web.lines, FRONT + 0.003, mobile ? 1.35 : 1), webMat)
+      // ---------------- the fracture and its crystals (opaque list, after the face)
+      const lines = buildWeb({ w: W, h: H, impact: IMPACT, radials: mobile ? 10 : 12, seed: 11 })
+      const wm = webMaterial(VEIL_GLSL, new THREE.Vector2(W / 2, H / 2))
+      web = wm.u
+      const cracks = new THREE.Mesh(webGeometry(lines.lines, FRONT + 0.003, { widthScale: mobile ? 1.35 : 1, reach: mobile ? 0.085 : 0.075 }), wm.mat)
       cracks.renderOrder = 2
       cracks.frustumCulled = false
-      site.add(cracks)
-      await nextFrame()
-
-      // ---------------- the new laminate: thicker, frosted border, thawing window
-      const lm = laminateMaterials(W, H, LAM_DEPTH)
-      lamU = lm.u
-      const lamGeo = slab(W, H, { radius: RADIUS, depth: LAM_DEPTH, bevel: LAM_BEVEL, segments: mobile ? 6 : 10 })
-      const lamMesh = new THREE.Mesh(lamGeo, [lm.caps, lm.sides])
-      lamRim = rimMaterial()
-      lam.add(lamMesh, new THREE.Mesh(lamGeo, [HIDDEN, lamRim]))
-      lam.position.set(W * 1.4, 0, LAM_Z)
+      plate.add(cracks)
     },
 
     update(l: number, frame: Frame, ctx: ChapterContext) {
-      const rm = ctx.reducedMotion
-      const t = frame.time
-      const calm = rm || !!frame.still
+      const calm = ctx.reducedMotion || !!frame.still
       const wp = ctx.world.params
       const pp = ctx.post.params
 
-      // ---------------- phases
+      // ---------------- phases (all from local)
       const struck = l >= T.strike
-      const redIn = smoothstep(T.strike - 0.004, T.strike + 0.03, l)
+      const redIn = smoothstep(T.strike, T.red1, l)
       const drain = smoothstep(T.drain0, T.drain1, l)
       const threat = redIn * (1 - drain)
-      const slide = ease.outCubic(segment(l, T.slide0, T.slide1))
-      const thaw = ease.inOutCubic(segment(l, T.thaw0, T.thaw1))
-      const steady = smoothstep(0.58, 0.7, l)
-      // a very slow breath of light (≈ 7 s), only in the steady state
-      const breath = rm ? 0 : Math.sin((t * Math.PI * 2) / 7) * steady
+      const cryst = segment(l, T.cryst0, T.cryst1)
+      const front = inOutSine(segment(l, T.frost0, T.frost1))
+      const pol = segment(l, T.polish0, T.polish1)
+      const steady = smoothstep(T.handoff, T.scan0 + 0.02, l)
+      const scanOn = steady * (1 - smoothstep(T.out, T.out + 0.03, l))
 
       // ---------------- camera region → where the backlight halo sits
       const reg = solvePose(l, frame, layout, scratch)
       const aspect = frame.width / Math.max(1, frame.height)
       wp.focus.set(reg.cx * aspect, reg.cy)
       wp.haloSize = clamp(reg.fh * 1.55, 0.8, 1.7)
-      wp.halo = lerp(0.62, 0.85, threat) + 0.1 * breath
+      wp.halo = lerp(0.62, 0.85, threat)
       wp.haloColor = tmpC.copy(COOL).lerp(RED, threat)
       wp.slits = lerp(0.16, 0.06, threat)
       wp.slitAngle = 0
-      wp.envTurn = envTurn(l) * (rm ? 0.4 : 1)
+      wp.envTurn = envTurn(l) * (ctx.reducedMotion ? 0.4 : 1)
       wp.env = 1
       wp.keyDir.set(-0.5, 0.8, 0.55)
       wp.key = 1.5
 
       pp.vignette = 0.5
-      pp.bloomStrength = 0.3
-      pp.glitch = rm ? 0 : 0.05 * Math.sin(Math.PI * segment(l, T.strike, T.strike + 0.05))
+      pp.glitch = 0
+      // no bloom: measured, it only softened the crush point (the plate reads crisper without it)
+      pp.bloomStrength = 0
 
-      // ---------------- the site pane: backlight, etch, strike
+      // ---------------- the face: backlight, cuts, strike, heal, watch
       if (face) {
         const u = face
-        const glow = lerp(0.44, 0.5, threat) * (1 + 0.08 * breath)
-        u.uGlow.value = glow
+        u.uGlow.value = lerp(0.5, 0.54, threat)
         u.uGlowColor.value.copy(COOL).lerp(RED, threat * 0.92)
-        u.uLipColor.value.copy(WHITE).lerp(tmpC2.set('#ffb3a8'), threat * 0.6)
-        u.uLight.value.set(-0.25 + 0.06 * Math.sin(t * 0.13) * (calm ? 0 : 1), 0.2)
-        // the shock ring runs out once across the pane; the crush point stays until healed
+        u.uLipColor.value.copy(WHITE).lerp(RIM_HOT, threat * 0.6)
+        u.uLight.value.set(-0.25, 0.2)
+        // the shock ring runs out once across the plate (not under calm); the crush point stays until frosted over
         const ring = segment(l, T.strike, T.strike + 0.07)
-        u.uRing.value.set(ease.outCubic(ring) * 2.6, struck ? (1 - ring) * 1.4 * Math.min(1, ring * 12) : 0)
-        const healed = smoothstep(T.heal0 + 0.08, T.heal1, l)
-        u.uCrush.value = struck ? 1.2 * (1 - healed) : 0
-        u.uCrushColor.value.copy(WHITE).lerp(tmpC2.set('#ffd2cc'), threat * 0.5)
+        u.uRing.value.set(ease.outCubic(ring) * 2.6, struck && !calm ? (1 - ring) * 1.2 * Math.min(1, ring * 12) : 0)
+        u.uCrush.value = 1.2 * smoothstep(T.strike, T.strike + 0.025, l)
+        u.uCrushColor.value.copy(WHITE).lerp(CRUSH_HOT, threat * 0.5)
+        u.uFront.value = l < T.frost0 ? -1 : lerp(-0.35, 1.3, front)
+        u.uPolish.value = lerp(-2.3, 2.3, inOutSine(pol))
+        u.uPolishK.value = Math.sin(Math.PI * pol) * (calm ? 0.28 : 0.5)
+        u.uScan.value.set(lerp(-W / 2 - 0.15, W / 2 + 0.15, segment(l, T.scan0, T.scan1)), 0.55 * scanOn)
       }
-      // the strike: the pane dips back and settles (scroll-driven, it holds)
+      // the strike: the plate dips back and settles (scroll-driven; it holds)
       const hit = segment(l, T.strike, T.strike + 0.06)
-      const dip = rm ? 0 : -0.07 * Math.sin(Math.PI * hit) * (1 - hit) * (struck ? 1 : 0)
-      site.position.set(0, calm ? 0 : 0.018 * Math.sin(t * 0.5), dip)
-      site.rotation.set(calm ? 0 : 0.01 * Math.sin(t * 0.31), calm ? 0 : 0.016 * Math.sin(t * 0.23), 0)
+      const dip = calm || !struck ? 0 : -0.07 * Math.sin(Math.PI * hit) * (1 - hit)
+      plate.position.set(0, 0, dip)
 
-      // ---------------- the fracture: grows, then heals from the edges inward
-      if (webMat) {
-        const u = webMat.uniforms
+      // ---------------- the fracture grows; crystals grow off it; the condensation swallows it
+      if (web) {
+        const u = web
         u.uGrow.value = struck ? ease.outQuad(segment(l, T.strike, T.grown)) * 1.08 + 0.004 : -1
-        u.uHeal.value = lerp(1.2, -0.05, ease.inOutQuad(segment(l, T.heal0, T.heal1)))
         u.uHead.value = 1 - smoothstep(T.grown - 0.03, T.grown, l)
-        ;(u.uColor.value as THREE.Color).copy(WHITE).lerp(tmpC2.set('#ffe1dc'), threat * 0.5)
-        ;(u.uHot.value as THREE.Color).set(1, 0.92, 0.88)
-        u.uIntensity.value = lerp(1.25, 0.9, drain)
+        u.uColor.value.copy(WHITE).lerp(HOT, threat * 0.6)
+        u.uHot.value.copy(HEAD)
+        u.uIntensity.value = lerp(1.2, 0.95, drain)
+        u.uFlank.value.copy(RED)
+        u.uFlankK.value = 0.45 * threat
+        u.uCryst.value = l < T.cryst0 ? -1 : lerp(-0.05, 1.5, ease.inOutQuad(cryst))
+        u.uCrystColor.value.copy(WHITE).lerp(COOL, 0.5)
+        u.uFront.value = face ? face.uFront.value : -1
       }
 
-      // ---------------- the new laminate: slides in, thaws
-      lam.visible = l > T.slide0 - 0.005
-      lam.position.set(lerp(W * 1.45, 0, slide), site.position.y, LAM_Z + lerp(0.25, 0, slide))
-      lam.rotation.set(site.rotation.x, lerp(-0.12, 0, slide) + site.rotation.y, 0)
-      if (lamU) {
-        // the thaw front descends from above the pane and settles low
-        lamU.uFront.value = lerp(H * 0.5 + 0.45, -0.42, thaw)
-        lamU.uFrostGlow.value.copy(COOL).multiplyScalar(0.085 * (1 + 0.1 * breath))
-      }
-      // polished edges: a razor line always; a light sweep glides along them as the laminate arrives
-      if (siteRim) {
-        const u = siteRim.uniforms
-        u.uBase.value = lerp(0.5, 0.75, threat) * (1 - 0.5 * slide)
-        ;(u.uColor.value as THREE.Color).copy(WHITE).lerp(tmpC2.set('#ffc4bc'), threat * 0.7)
-        const sw = segment(l, 0.0, 0.2)
-        u.uSweep.value = lerp(-2.6, 2.6, ease.inOutQuad(sw))
-        u.uBand.value = Math.sin(Math.PI * sw) * 0.9
-      }
-      if (lamRim) {
-        const u = lamRim.uniforms
-        u.uBase.value = 0.9 * (1 + 0.1 * breath)
-        const sw = segment(l, 0.4, 0.66)
-        u.uSweep.value = lerp(-2.6, 2.6, ease.inOutQuad(sw))
-        u.uBand.value = Math.sin(Math.PI * sw) * (rm ? 0.5 : 1.3)
+      // ---------------- the polished edge: a razor line, the interlayer, the polish running along it
+      if (rim) {
+        const u = rim.uniforms
+        u.uBase.value = lerp(0.5, 0.75, threat)
+        ;(u.uColor.value as THREE.Color).copy(WHITE).lerp(RIM_HOT, threat * 0.7)
+        ;(u.uFilmColor.value as THREE.Color).copy(COOL).lerp(RED, threat)
+        u.uFilm.value = lerp(0.22, 0.6, threat)
+        // two sweeps: the studio light greets the plate, then the polish runs the edge
+        const sw0 = segment(l, 0.0, 0.2)
+        const sw1 = segment(l, T.polish0, T.polish1 + 0.02)
+        if (l < T.polish0) {
+          u.uSweep.value = lerp(-2.6, 2.6, ease.inOutQuad(sw0))
+          u.uBand.value = Math.sin(Math.PI * sw0) * 0.9
+        } else {
+          u.uSweep.value = lerp(-2.6, 2.6, inOutSine(sw1))
+          u.uBand.value = Math.sin(Math.PI * sw1) * (calm ? 0.5 : 1.2)
+        }
       }
 
       // ---------------- DOM

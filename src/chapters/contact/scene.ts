@@ -24,6 +24,12 @@ import { frostedLogo, G, type FrostedLogo } from '../../kit/glass'
  *              sandblasted sign on black. Thawed glass drops the gain and
  *              shows only what's really behind it: the halo and the hairline
  *              slits, bent by its faces and polished edges.
+ *            - THE LAST BREATH: frost re-forms from the mark's outer edges
+ *              inward (uFrost = the front's radius; frost wherever the glass
+ *              lies outside it): a thin condensation haze runs ahead, then a
+ *              finer, feathered crystalline front with a faint rime of light
+ *              (uRime). Once it has closed the caps are exactly the landing's
+ *              sandblast again, so the site ends on the frosted mark.
  *   slits  the chapter's own hairline light lines on a plane behind the mark
  *          (the world's slits are fixed around the halo; these are placed to
  *          cross the mark's strokes). Behind the sandblast they diffuse into
@@ -42,6 +48,12 @@ export interface ThawUniforms {
   uMeltColor: { value: THREE.Color }
   /** extra light the sandblast gathers from behind (0 = plain transmission) */
   uGain: { value: number }
+  /** the re-frost front's radius (object units): glass outside it is frosted again */
+  uFrost: { value: number }
+  /** how far the condensation haze runs ahead of the re-frost front */
+  uHaze: { value: number }
+  /** the rime of light riding the re-frost front */
+  uRime: { value: number }
 }
 
 export interface ThawScene {
@@ -72,7 +84,7 @@ const LOD_RE = /float lod = log2\( transmissionSamplerSize\.x \) \* applyIorToRo
 
 const NOISE = /* glsl */ `
   varying vec3 vThawP;
-  uniform float uThaw, uSoft, uClear, uMelt, uMeltW, uGain;
+  uniform float uThaw, uSoft, uClear, uMelt, uMeltW, uGain, uFrost, uHaze, uRime;
   uniform vec3 uMeltColor;
   float thHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
   float thNoise(vec2 p) {
@@ -100,8 +112,17 @@ function patchThaw(m: THREE.MeshPhysicalMaterial, u: ThawUniforms) {
         /* glsl */ `#include <roughnessmap_fragment>
         // distance past the thaw front (negative = thawed); a noise-edged,
         // slightly uneven front, like frost melting off cold glass
-        float thD = length(vThawP.xy) + (thFbm(vThawP.xy * 5.5) - 0.5) * 0.11 - uThaw;
+        float thR = length(vThawP.xy);
+        float thD = thR + (thFbm(vThawP.xy * 5.5) - 0.5) * 0.11 - uThaw;
         float thClear = 1.0 - smoothstep(-uSoft, uSoft * 0.25, thD);
+        // the last breath: frost re-forms from the edges inward (positive =
+        // outside the front = frosted again). A finer, ridged, feathered edge
+        // reads as crystals growing, not as the thaw played backwards.
+        float frN = thFbm(vThawP.xy * 10.0 + 7.3);
+        float frD = thR - uFrost + (abs(frN - 0.5) * 2.0 - 0.5) * 0.07;
+        float frIce = smoothstep(-uSoft * 0.25, uSoft, frD);
+        float frHaze = smoothstep(-uHaze, 0.0, frD) * (1.0 - frIce);
+        thClear *= (1.0 - frIce) * (1.0 - 0.35 * frHaze);
         roughnessFactor = mix(roughnessFactor, uClear, thClear);`,
       )
       .replace(
@@ -110,7 +131,11 @@ function patchThaw(m: THREE.MeshPhysicalMaterial, u: ThawUniforms) {
         // the melt line: a razor core and a faint wet sheen trailing inside it
         float thM = thD / max(uMeltW, 1e-4);
         float thW = min(thD, 0.0) / max(uMeltW * 5.0, 1e-4);
-        totalEmissiveRadiance += uMeltColor * (uMelt * (exp(-thM * thM) + 0.1 * exp(-thW * thW)));`,
+        totalEmissiveRadiance += uMeltColor * (uMelt * (exp(-thM * thM) + 0.1 * exp(-thW * thW)));
+        // the rime: the frost is densest (and glows most) right at its growing
+        // edge; a soft, uneven band of light, not a hard line
+        float frM = (frD - uMeltW * 1.5) / max(uMeltW * 2.6, 1e-4);
+        totalEmissiveRadiance += uMeltColor * (uRime * (0.35 + frN) * exp(-frM * frM));`,
       )
       .replace(
         '#include <transmission_fragment>',
@@ -175,6 +200,9 @@ export function buildScene(): ThawScene {
     uMeltW: { value: 0.0055 },
     uMeltColor: { value: new THREE.Color(G.ice) },
     uGain: { value: 2.3 },
+    uFrost: { value: 2 },
+    uHaze: { value: 0.11 },
+    uRime: { value: 0 },
   }
   patchThaw(logo.caps, thaw)
 

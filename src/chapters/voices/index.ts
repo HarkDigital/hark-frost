@@ -5,8 +5,12 @@ import { clamp, lerp, rng, smoothstep } from '../../core/math'
 import { nextFrame } from '../../core/yield'
 import { SECTIONS, TESTIMONIALS } from '../../content'
 import { makePane, PH, PW, REGION, type Pane } from './breath'
-import { nameMask, scriptFontsReady, resetMasks, MW } from './script'
+import { buildMaskIdle, hasMask, nameMask, preloadScriptFonts, scriptFontsReady, resetMasks } from './script'
+import { whenRevealed } from '../../kit/images'
 import './voices.css'
+
+// the hand starts downloading while the chapters before this one initialise
+void preloadScriptFonts()
 
 /*
  * BREATH (voices) — one large sheet of cold glass in the black room, fogged
@@ -17,7 +21,9 @@ import './voices.css'
  * itself is DOM, in a frosted panel.
  *
  *   0.00–0.09  intro: condensation blooms across the clear pane (a breath);
- *              “We listen. They talk.”
+ *              “We listen. They talk.” — and the finger has already begun
+ *              the first name (it starts at V0, so the landing finds it
+ *              half-written)
  *   0.09–0.93  eight voices (0.105 each): write the name → the company →
  *              hold (drips run, the light sweeps along the edges) → re-fog
  *   0.93–1.00  the whole pane fogs over, heavy and white, for the cut
@@ -30,13 +36,17 @@ const B0 = 0.09
 const B1 = 0.93
 const SPAN = (B1 - B0) / N
 const HYST = 0.005
+/** the first voice's writing begins in the intro */
+const V0 = 0.043
 /** inside a voice (phase 0..1) */
-const WRITE_A = 0.04
+const WRITE_A = 0.025
 const WRITE_B = 0.47
 const CO_A = 0.44
 const CO_B = 0.62
-const REFOG_A = 0.84
-const REFOG_B = 0.985
+const REFOG_A = 0.88
+const REFOG_B = 0.995
+/** drip trail half-width where it leaves the stroke (world units) */
+const DRIP_W = 0.026
 
 
 /** writing pace: a little slower into and out of the stroke, steady between */
@@ -83,7 +93,11 @@ export default function create(): Chapter {
   const lay: Layout = { w: 0, h: 0, portrait: false, beat: [0, 0, 1, 1], intro: [0, 0, 1, 1] }
   let measured = false
   let currentMask = -1
+  /** the engine has entered this chapter (prewarm updates it without entering) */
+  let entered = false
   let dripU: THREE.Vector4[] = []
+  /** textures from a fallback-font build, disposed once rebound */
+  let stale: THREE.Texture[] = []
 
   /* -------------------------------------------------------------- DOM */
 
@@ -225,6 +239,8 @@ export default function create(): Chapter {
 
   /** which voice's writing is on the glass, and where it is in its beat */
   function voiceAt(local: number) {
+    // the first voice runs from V0 (in the intro) to the end of its slot
+    if (local < B0 + SPAN) return { i: 0, p: clamp((local - V0) / (B0 + SPAN - V0)), active: local >= V0 }
     const i = Math.min(N - 1, Math.max(0, Math.floor((local - B0) / SPAN)))
     const p = local < B0 ? 0 : local >= B1 ? 1 : clamp((local - B0 - i * SPAN) / SPAN)
     return { i, p, active: local >= B0 && local < B1 }
@@ -276,29 +292,30 @@ export default function create(): Chapter {
       dripU = [pane.u.uDrip0.value, pane.u.uDrip1.value]
       group.add(pane.root)
       await nextFrame()
-      const fontsOk = await scriptFontsReady()
-      // the first voice now; the rest a frame at a time
-      nameMask(0)
-      await nextFrame()
-      for (let i = 1; i < N; i++) {
-        nameMask(i)
-        await nextFrame()
-      }
-      if (!fontsOk) {
-        document.fonts?.ready.then(() => {
-          resetMasks()
+      const fontsOk = await scriptFontsReady(2500)
+      // the first voice now (the landing shows it half-written); the rest
+      // after the reveal, a phase per frame, so they never hold up the boot.
+      // A jump that lands on a voice first builds that one on the spot.
+      await buildMaskIdle(0)
+      whenRevealed().then(async () => {
+        if (!fontsOk && (await scriptFontsReady(15000))) {
+          // the hand arrived late: redo the fallback build
+          stale = resetMasks()
           currentMask = -1
-        })
-      }
+        }
+        for (let i = 0; i < N; i++) await buildMaskIdle(i)
+      })
     },
 
     onEnter() {
+      entered = true
       sinkAll()
       deferShow = 1
       if (!measured) measure()
     },
 
     onLeave() {
+      entered = false
       sinkAll()
     },
 
@@ -309,21 +326,27 @@ export default function create(): Chapter {
       const p = v.p
 
       /* ---- the writing ---- */
-      if (v.i !== currentMask) {
-        const m = nameMask(v.i)
-        currentMask = v.i
+      // (the boot prewarm updates without entering: it compiles with any built
+      // mask rather than building one on the spot)
+      const mi = entered || hasMask(v.i) ? v.i : hasMask(currentMask) ? currentMask : 0
+      if (mi !== currentMask) {
+        const m = nameMask(mi)
+        currentMask = mi
         u.uMask.value = m.tex
         u.uCapN.value = m.capName
         u.uCapC.value = m.capCo
         u.uHasMask.value = 1
-        const finger = (m.radius / MW) * REGION.w
         dripU.forEach((d, k) => {
           const s = m.drips[k]
-          if (!s) d.set(0, 0, 0, finger * 0.62)
-          else d.set(REGION.x + (s.u - 0.5) * REGION.w, REGION.y + (s.v - 0.5) * REGION.h, 0, finger * 0.62)
+          if (!s) d.set(0, 0, 0, DRIP_W)
+          else d.set(REGION.x + (s.u - 0.5) * REGION.w, REGION.y + (s.v - 0.5) * REGION.h, 0, DRIP_W)
         })
+        if (stale.length) {
+          for (const t of stale) t.dispose()
+          stale = []
+        }
       }
-      const m = nameMask(v.i)
+      const m = nameMask(mi)
       const write = v.active ? pace((p - WRITE_A) / (WRITE_B - WRITE_A)) : local >= B1 ? 1 : 0
       const coWrite = v.active ? pace((p - CO_A) / (CO_B - CO_A)) : local >= B1 ? 1 : 0
       const refog = v.active ? pace((p - REFOG_A) / (REFOG_B - REFOG_A)) : local >= B1 ? 1 : 0
@@ -393,7 +416,9 @@ export default function create(): Chapter {
       w.fill = 0.04
       const post = ctx.post.params
       post.vignette = 0.62
-      post.bloomStrength = 0.32
+      // no bloom: nothing here but the sweep's hairline crosses the threshold
+      // (≈0.2% of pixels); the fog shader draws its soft glint itself
+      post.bloomStrength = 0
       post.bloomRadius = 0.35
       post.grain = 0.02
 

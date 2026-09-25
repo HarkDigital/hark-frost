@@ -689,3 +689,21 @@ html.motion-off *::after {
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
 }
+
+/* forced colors (Windows High Contrast): the shared HUD vocabulary keeps its
+   shapes and legible words when fills and gradients are dropped */
+@media (forced-colors: active) {
+  .hud-btn,
+  .hud-btn--ghost {
+    border: 1px solid ButtonText;
+  }
+  .hud-panel {
+    background: Canvas;
+    border: 1px solid CanvasText;
+  }
+  /* gradient-clipped words (they sit behind deeper selectors, hence !important) */
+  em {
+    background: none !important;
+    -webkit-text-fill-color: currentColor !important;
+  }
+}

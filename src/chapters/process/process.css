@@ -13,6 +13,11 @@
   gap: 18px;
   justify-items: start;
 }
+/* the headline sits in the spotlight's cone (on portrait right over it): end
+   the accent gradient on a lighter silver so 'Then we build.' holds ≥ 3:1 */
+.stage-process .pr-headline {
+  --accent-grad: linear-gradient(100deg, #ffffff 0%, #e2e6ec 45%, #b3b9c2 100%);
+}
 
 /* ---------------- the step card ---------------- */
 

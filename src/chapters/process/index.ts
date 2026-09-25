@@ -54,7 +54,10 @@ import './process.css'
  *   0.95–1.00  out-beat
  *
  * Everything is derived from `local`; frame.time only drives the spray and a
- * slow breathing sway.
+ * slow breathing sway (both held still under reduced motion / Motion off).
+ * The one follower: the nozzle's vertical raster is a single pass across the
+ * blast, eased and speed-capped (≤ 1.5 sweeps/s at any scroll speed — the lit
+ * stream crossing the frame must never strobe, WCAG 2.3.1).
  */
 
 // ---------------------------------------------------------------- layout
@@ -92,6 +95,9 @@ const SHOW = [STATS[0], STATS[2], STATS[1]]
 
 /** a triangle wave in [-1, 1] */
 const tri = (x: number) => 1 - 4 * Math.abs(x - Math.floor(x + 0.5))
+/** the nozzle's raster: top speed in pane heights per second (a sweep is 0.8) */
+const RASTER_SPEED = 1.2
+const RASTER_SPEED_CALM = 0.7
 
 // ---------------------------------------------------------------- camera keys
 
@@ -253,6 +259,9 @@ export default function create(): Chapter {
   let shown = -2
   let tilesShown = false
   const fillCache = [-1, -1, -1, -1]
+  /** the nozzle's raster height (pane uv), following its scroll-driven target */
+  let rasterY = 0.5
+  let rasterSnap = true
 
   const tmpPos = new THREE.Vector3()
   const tmpTgt = new THREE.Vector3()
@@ -273,6 +282,11 @@ export default function create(): Chapter {
     group,
     // the four steps, then the stats
     anchors: [...ANCHORS, STATS_AT],
+
+    onEnter() {
+      // arriving (a cut or a jump hides the swap): the nozzle starts where it belongs
+      rasterSnap = true
+    },
 
     async init(ctx) {
       ctxRef = ctx
@@ -402,7 +416,11 @@ export default function create(): Chapter {
 
     update(local, frame, ctx) {
       if (!ready) return
-      const rm = frame.reducedMotion
+      // the reduced-motion preference calms the scroll-coupled extras (the env turn,
+      // the glint); calm adds the visitor's Motion switch for the spray and the
+      // raster (frame.time already holds still under it, so the sways freeze)
+      const rm = ctx.reducedMotion || frame.reducedMotion
+      const calm = rm || !!frame.still
       const t = frame.time
       const portrait = frame.height > frame.width * 1.1
 
@@ -463,8 +481,18 @@ export default function create(): Chapter {
       const blastU = segment(local, BLAST[0], BLAST[1])
       const front = lerp(-0.1, 1.1, blastU)
       const blasting = window01(local, BLAST[0] - 0.004, BLAST[1] + 0.006, 0.012)
-      // the nozzle rasters: sweeps up and down while the front advances
-      const iy = 0.5 + 0.4 * tri(blastU * 4.5 + 0.25)
+      // the nozzle works the front in one pass (middle, down, up, middle) while it
+      // advances; the head follows that target eased and speed-capped, so no scroll
+      // speed (or scrubbing) can make the lit stream sweep the frame > 1.5×/s
+      const iyT = 0.5 + 0.4 * tri(blastU + 0.25)
+      if (rasterSnap) {
+        rasterY = iyT
+        rasterSnap = false
+      } else {
+        const cap = (calm ? RASTER_SPEED_CALM : RASTER_SPEED) * frame.dt
+        rasterY += clamp((iyT - rasterY) * (1 - Math.exp(-7 * frame.dt)), -cap, cap)
+      }
+      const iy = rasterY
       const ix = clamp(front + 0.015, 0, 1)
       pane.u.uFront.value = local < BLAST[0] ? -0.3 : front
       pane.u.uImpact.value.set(ix, iy)
@@ -484,11 +512,13 @@ export default function create(): Chapter {
       spray.u.uFrom.value.copy(tipLocal).addScaledVector(dirLocal, 0.005)
       spray.u.uTo.value.copy(impactLocal)
       spray.u.uTime.value = rm ? t * 0.15 : t
-      spray.u.uIntensity.value = blasting * (rm ? 0.7 : 1)
-      spray.u.uSize.value = (mobileSize(frame) ? 2.6 : 2.6) * (ctx.renderer.getPixelRatio() || 1)
+      // a fine stream of grains, not a beam: its peak stays low enough that the
+      // stream crossing a region never swings it by a flash's worth of light
+      spray.u.uIntensity.value = blasting * (calm ? 0.42 : 0.55)
+      spray.u.uSize.value = 2.6 * (ctx.renderer.getPixelRatio() || 1)
       spray.points.visible = blasting > 0.002
       impact.mesh.position.copy(impactLocal)
-      impact.u.uIntensity.value = blasting * (rm ? 0.8 : 0.85 + 0.15 * Math.sin(t * 9.0) * Math.sin(t * 5.3))
+      impact.u.uIntensity.value = blasting * (calm ? 0.55 : 0.62 + 0.06 * Math.sin(t * 5.1) * Math.sin(t * 3.3))
       impact.mesh.visible = blasting > 0.002
 
       // ================= the frost itself: glow while blasting, swelling when finished
@@ -535,9 +565,11 @@ export default function create(): Chapter {
       w.key = 1.7
       w.fill = 0.08
 
-      // ---- post
+      // ---- post: bloom only where a light needs to read as light — the scan ring
+      // and the polish glint on the bevel (elsewhere it adds nothing, or smears
+      // the stream); off, the pass costs nothing
       const post = ctx.post.params
-      post.bloomStrength = 0.42
+      post.bloomStrength = Math.max(0.32 * scanOn, 0.42 * window01(local, POLISH[0] - 0.01, POLISH[1] + 0.02, 0.025))
       post.bloomRadius = 0.35
       post.vignette = 0.55
 
@@ -605,5 +637,3 @@ export default function create(): Chapter {
     },
   }
 }
-
-const mobileSize = (frame: Frame) => frame.mobile || frame.width < 768

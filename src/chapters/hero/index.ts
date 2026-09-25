@@ -4,7 +4,7 @@ import { el, reveal, rise, setRise } from '../../core/dom'
 import { BRAND, MICROCOPY } from '../../content'
 import { clamp, lerp, segment, smoothstep } from '../../core/math'
 import { nextFrame } from '../../core/yield'
-import { FLOOR_MIRROR, MARK_S, buildCard, buildFloor, buildMark, buildReflection, refineMark, type HeroSet } from './scene'
+import { FLOOR_MIRROR, MARK_S, THAW_A, THAW_B, buildCard, buildFloor, buildMark, buildReflection, refineMark, type HeroSet } from './scene'
 import './hero.css'
 
 /*
@@ -19,16 +19,21 @@ import './hero.css'
  *                      lights from the centre outward, one highlight sweeps.
  *   0.10–0.56  MACRO   the camera travels in close: along the polished bevel,
  *                      across the sandblasted face (the backlight drifts
- *                      behind it, so the frost gradient shifts), then a clear
- *                      THAW window glides over the face: clear glass, the
- *                      light and a hairline slit sharp behind it.
+ *                      behind it, so the frost gradient shifts; the grain
+ *                      reads), then a clear THAW window glides over the face
+ *                      along a light strip behind the glass: razor sharp in
+ *                      the window, a soft frosted bar outside it, a
+ *                      crystalline melt front at its edge.
  *   0.56–0.93  PAYOFF  pull back; the mark settles right of centre (upper
  *                      half on portrait), front-on-ish; tagline + CTAs.
  *   0.93–1.00  OUT     the camera drifts into the frosted face as the breath
- *                      cut fogs the frame.
+ *                      cut fogs the frame. Calm (reduced motion / Motion
+ *                      off): the camera holds the payoff pose and the
+ *                      engine's cut fades through black.
  *
  * Every pose derives from `local`; frame.time only drives the sway and the
- * light sweep; the reveal runs on its own clock.
+ * light sweep (none under reduced motion; frozen with Motion off); the reveal
+ * runs on its own clock.
  */
 
 /** smootherstep on a segment */
@@ -116,6 +121,15 @@ export default function create(): Chapter {
   const tmpU = new THREE.Vector3()
   const tmpW = new THREE.Vector3()
   const tmpC = new THREE.Vector3()
+  const tmpP = new THREE.Vector3()
+  const tmpQ = new THREE.Vector3()
+  const cardX = new THREE.Vector3()
+  const cardY = new THREE.Vector3()
+  const cardN = new THREE.Vector3()
+  const lineA = new THREE.Vector2()
+  const lineB = new THREE.Vector2()
+  const focus = new THREE.Vector2()
+  const focusW = new THREE.Vector3()
   const UP = new THREE.Vector3(0, 1, 0)
   const tmpM = new THREE.Matrix4()
   const val = new Array<number>(NV).fill(0)
@@ -172,6 +186,18 @@ export default function create(): Chapter {
   let keyW = -1
   let keyH = -1
 
+  /** a world point seen from the camera, projected onto the card plane (card coords) */
+  const onCardWorld = (s: HeroSet, world: THREE.Vector3, out: THREE.Vector2) => {
+    const d = tmpP.copy(world).sub(pos)
+    const den = d.dot(cardN)
+    const t = tmpQ.copy(s.card.position).sub(pos).dot(cardN) / (Math.abs(den) > 1e-6 ? den : 1e-6)
+    const x = d.multiplyScalar(t).add(pos).sub(s.card.position)
+    out.set(x.dot(cardX), x.dot(cardY))
+  }
+  /** a point on the mark (mark units), projected onto the card plane */
+  const onCard = (s: HeroSet, markPt: THREE.Vector3, out: THREE.Vector2) =>
+    onCardWorld(s, tmpW.copy(markPt).applyMatrix4(s.logo.root.matrixWorld), out)
+
   /** Hermite-interpolate the keys at `local` into val[] */
   const sample = (local: number) => {
     let i = 0
@@ -205,8 +231,8 @@ export default function create(): Chapter {
       await nextFrame()
       refineMark(mark.logo.mark.geometry)
       await nextFrame()
-      const composer = ctx.post.composer
-      const card = buildCard(rt => rt === composer.renderTarget1 || rt === composer.renderTarget2)
+      // the frame renders into the post chain's own targets; three's glass buffer is anything else
+      const card = buildCard(rt => ctx.post.isFrameTarget(rt))
       const floor = buildFloor()
       const reflection = buildReflection(mark.logo.mark.geometry)
       set = { ...mark, ...card, floor, reflection }
@@ -259,7 +285,10 @@ export default function create(): Chapter {
       const t = frame.time
       const portrait = frame.width <= frame.height
       const aspect = frame.width / Math.max(1, frame.height)
-      const calm = reduced ? 0.3 : 1
+      // reduced motion: no sway, no sweep. Motion off: frame.time holds, so they hold too
+      const calm = reduced ? 0 : 1
+      // calm out-beat: no dive into the glass; the camera holds the payoff pose under the fade
+      const still = reduced || !!frame.still
 
       // ---- reveal (time-based): backlight up from black, frost lights centre-out, one sweep
       const clock = now()
@@ -278,7 +307,7 @@ export default function create(): Chapter {
         keyH = frame.height
         buildKeys(portrait, aspect, s.markAspect)
       }
-      sample(local)
+      sample(still ? Math.min(local, 0.925) : local)
       const macro = smoothstep(0.08, 0.2, local) * (1 - smoothstep(0.52, 0.64, local))
       const payW = smoothstep(0.56, 0.66, local)
       const outW = smoothstep(0.925, 1, local)
@@ -316,20 +345,26 @@ export default function create(): Chapter {
       const turn = lerp(sweep, 0.9 * Math.sin(Math.PI * segment(local, 0.1, 0.56)) - 0.3, macro) + rSweep
       s.caps.envMapRotation.set(0, turn, 0)
       s.sides.envMapRotation.set(0, turn, 0)
-      s.caps.envMapIntensity = lerp(0.1, 0.55, rLight) * lerp(1, 0.8, macro)
+      // the FROST does the lighting: the sandblasted faces keep only a faint sheen of the
+      // studio (strong strip reflections read as brushed metal); the polished bevels keep it all
+      s.caps.envMapIntensity = lerp(0.06, 0.3, rLight) * lerp(1, 0.6, macro)
       s.sides.envMapIntensity = lerp(0.35, 1.6, rLight)
+      // a faint lift at the silhouette (light caught in the glass); the dark polished rims stay
+      s.rim.uniforms.uStrength.value = 0.15 * rLight * (1 - 0.5 * macro)
 
       // ---- the thaw: a clear window glides across the face in beat 03
-      // it runs down the lower diagonal band, from the right loop toward the bottom one
+      // it runs down the centre of the lower diagonal band, from the right loop toward the bottom one
       const thawP = segment(local, 0.44, 0.55)
-      // …and it's gone before the pull-back shows the whole mark (the rings behind go with it)
+      // …and it's gone before the pull-back shows the whole mark (the light strip behind goes with it)
       const thawK = smoothstep(0.43, 0.46, local) * (1 - smoothstep(0.515, 0.545, local))
-      s.capsU.uThaw.value.set(lerp(0.3, 0.0, thawP), lerp(0.01, -0.29, thawP), thawK)
-      s.capsU.uThawR.value = 0.095
+      s.capsU.uThaw.value.set(lerp(THAW_A.x, THAW_B.x, thawP), lerp(THAW_A.y, THAW_B.y, thawP), thawK)
+      s.capsU.uThawR.value = 0.066
+      s.capsU.uFront.value = 0.4
       s.caps.roughness = 0.46
-      // grain glints only close up (sub-pixel far away: let the mips flatten it)
-      const gn = lerp(0.02, 0.04, macro)
+      // the sandblast grain reads close up (sub-pixel far away: the mips flatten it)
+      const gn = lerp(0.02, 0.06, macro)
       s.caps.normalScale.set(gn, gn)
+      s.capsU.uGrain.value = lerp(0.05, 0.16, macro)
 
       // ---- the backlight card: camera-facing, behind the mark; it drifts in macro
       const camToMark = tmpC.copy(pos).negate().normalize() // the mark's centre is the origin
@@ -340,21 +375,49 @@ export default function create(): Chapter {
       s.card.position.set(0, 0, 0).addScaledVector(camToMark, back).addScaledVector(tmpR, driftX).addScaledVector(tmpU, driftY)
       tmpM.lookAt(pos, s.card.position, UP)
       s.card.quaternion.setFromRotationMatrix(tmpM)
+      tmpM.extractBasis(cardX, cardY, cardN)
       const cardSize = MARK_S * 5.2
       s.card.scale.set(cardSize, cardSize, 1)
       const cu = s.card.material.uniforms
       cu.uHalf.value = cardSize / 2
-      // the frost lights from the centre outward
+      // the frost lights from the centre outward: a hot core, then a broad light box
+      // behind every loop (glass buffer only; the room stays black)
       cu.uCore.value = lerp(0.08, 0.62, rSpread) * lerp(1, 1.15, macro)
-      cu.uHot.value.set(0.12 + 0.3 * drift, 0.06)
+      cu.uWideR.value = lerp(0.2, 1.6, rSpread)
+      cu.uBarW.value = 0.1
+      // in the macro shots the light sits behind whatever the camera studies, drifting
+      // across it (so the face in view glows through and its frost gradient shifts);
+      // in the thaw it slides off, so the razor line reads through the clear window
+      const lineK = smoothstep(0.405, 0.44, local) * (1 - smoothstep(0.53, 0.56, local))
+      const focusK = macro * (1 - 0.75 * lineK)
+      if (focusK > 0) onCardWorld(s, focusW.set(val[TX], val[TY], val[TZ]), focus)
+      const sweepX = -0.35 + 0.7 * sm(local, 0.14, 0.43)
+      cu.uHot.value.set(lerp(0.12 + 0.3 * drift, focus.x + sweepX, focusK), lerp(0.06, focus.y + 0.12, focusK))
       // two slits behind the loops; in macro they glide behind the face
       cu.uSlitX.value.set(-0.62 + 0.55 * drift, 0.52 - 0.35 * drift)
       cu.uSlitA.value.set(1, 0.72)
       cu.uSlitH.value = 3.2
       cu.uRings.value = 1.6
-      s.cardK.trans.glow = 0.75 * rLight
+      // close up the card fills the view: dim it there, or the faces clip to flat white
+      // (and a little more behind the thaw, so its razor line reads through the clear glass)
+      s.cardK.trans.glow = 0.62 * rLight * lerp(1, 0.55, macro) * (1 - 0.45 * lineK)
+      s.cardK.trans.wide = 0.4 * rLight * lerp(1, 0.4, macro) * (1 - 0.45 * lineK)
       s.cardK.trans.slit = 3.2 * rLight * rSlit
-      s.cardK.trans.width = 0.032
+      s.cardK.trans.width = 0.009
+      s.cardK.trans.bar = 0.6 * rLight * rSlit
+      // the thaw's light strip, straight behind the thaw path (from the camera): the window
+      // glides along it, so inside the window it's a razor line, outside a frosted bar
+      if (lineK > 0) {
+        onCard(s, THAW_A, lineA)
+        onCard(s, THAW_B, lineB)
+        lineB.sub(lineA)
+        const len = Math.max(lineB.length(), 1e-4)
+        const nx = -lineB.y / len
+        const ny = lineB.x / len
+        cu.uLine.value.set(nx, ny, -(nx * lineA.x + ny * lineA.y))
+      }
+      s.cardK.trans.line = 6.5 * lineK
+      s.cardK.trans.lineWidth = 0.0045
       // no rings: the polished bevels bend hairline rings into dashed 'tread' across
       // the macro shots; the thaw shows the clean light (and a slit) instead
       s.cardK.trans.rings = 0
@@ -365,7 +428,10 @@ export default function create(): Chapter {
       // ---- floor pool + reflection
       const fu = s.floor.material.uniforms
       fu.uK.value = 0.045 * rHalo * (1 - 0.4 * macro)
-      s.reflection.material.uniforms.uStrength.value = 0.2 * rLight
+      // portrait: the copy sits under the mark, so the reflection is only a faint top sliver
+      const ru = s.reflection.material.uniforms
+      ru.uStrength.value = 0.2 * rLight * (portrait ? 0.3 : 1)
+      ru.uFade.value = portrait ? 6 : 1.6
 
       // ---- world: black, the halo behind the mark, two hairline slits
       const wp = ctx.world.params
@@ -399,7 +465,7 @@ export default function create(): Chapter {
       pp.bloomThreshold = 1.6
       pp.vignette = 0.62
       pp.grain = 0.016
-      pp.frost = reduced ? 0 : 0.2 * smoothstep(0.955, 1, local)
+      pp.frost = still ? 0 : 0.2 * smoothstep(0.955, 1, local)
 
       // ---- DOM
       reveal(intro, 1 - smoothstep(0.06, 0.1, local))
@@ -409,7 +475,8 @@ export default function create(): Chapter {
         reveal(caps[i], smoothstep(a, a + 0.025, local) * (1 - smoothstep(b - 0.025, b, local)), 8)
       }
       reveal(payoff, smoothstep(0.6, 0.66, local) * (1 - smoothstep(0.93, 0.965, local)), 0)
-      setRise(title, local > 0.61 && local < 0.95)
+      // the headline and its CTAs leave together (with the payoff's fade)
+      setRise(title, local > 0.61 && local < 0.965)
     },
 
     camera(_local: number, _frame: Frame, out: CameraPose) {

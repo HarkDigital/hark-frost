@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
-import { frosted, polished } from '../../kit/glass'
+import { flattenCaps, frosted, polished, smoothSides } from '../../kit/glass'
 import { SERVICES } from '../../content'
 import { buildAtlas, type Atlas } from './icons'
 
@@ -143,8 +143,13 @@ export function buildDeck(mobile: boolean, envMap: THREE.Texture | null): Deck {
     steps: 1,
   })
   raw.translate(0, 0, -TILE_D / 2)
-  // non-indexed: creased normals keep the material groups
+  // non-indexed: creased normals keep the material groups (0 = caps, 1 = sides + bevel)
   const geo = toCreasedNormals(raw, Math.PI / 4.5)
+  // clean normals for close-ups: one consistent smooth normal per bevel corner
+  // (creased-only normals zigzag the strip reflections along every edge) and
+  // exactly flat sandblasted caps (no shading 'spokes' fanning in from the rim)
+  smoothSides(geo)
+  flattenCaps(geo)
   geo.computeBoundingBox()
   geo.computeBoundingSphere()
 

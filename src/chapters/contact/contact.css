@@ -218,20 +218,34 @@
   white-space: nowrap;
 }
 
-/* ---- the sign-off under the clear mark (placed from index.ts) */
+/* ---- the sign-off beneath the re-frosted mark: display type (hud-h2) with
+   the hero's gradient italic. Placed from index.ts; its font-size is stepped
+   down there only when the art area is too narrow for it. */
 .stage-contact .ct-sign {
   position: absolute;
   left: 0;
   top: 0;
   margin: 0;
   white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--fg-muted);
+  text-align: center;
   pointer-events: none;
   will-change: opacity, transform;
+}
+
+/* ---- compact cards: 'Other concepts' behind a disclosure (fit-4) */
+.stage-contact .ct-more-btn {
+  display: none;
+}
+.stage-contact .ct-more-arr {
+  display: inline-block;
+  width: 0.8em;
+  text-align: center;
+  transition:
+    transform 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+    color 0.3s ease;
+}
+.stage-contact .ct-more.is-open ~ .ct-foot .ct-more-arr {
+  transform: rotate(45deg);
 }
 
 /* ---- fit levels (measured in hud.ts): short screens step the card down.
@@ -314,20 +328,57 @@
   font-size: 10px;
 }
 
+/* fit-4: the sister concepts fold into a toggle beside Back to top, the
+   colophon line drops (the copy layer and ?read carry both) */
+.stage-contact.ct-fit-4 .ct-more-label,
+.stage-contact.ct-fit-4 .ct-legal {
+  display: none;
+}
+.stage-contact.ct-fit-4 .ct-more:not(.is-open) {
+  display: none;
+}
+.stage-contact.ct-fit-4 .ct-more.is-open {
+  margin-bottom: 2px;
+}
+.stage-contact.ct-fit-4 .ct-rule {
+  margin: 12px 0 6px;
+}
+.stage-contact.ct-fit-4 .ct-foot {
+  margin-top: 0;
+}
+.stage-contact.ct-fit-4 .ct-more-btn {
+  display: inline-flex;
+}
+
+/* fit-5 (the smallest phones, 320 × 568): the block goes entirely */
+.stage-contact.ct-fit-5 .ct-more,
+.stage-contact.ct-fit-5 .ct-more-btn {
+  display: none;
+}
+.stage-contact.ct-fit-5 .ct-foot {
+  justify-content: flex-start;
+}
+
 /* ---- portrait: the card runs along the bottom, the mark lives above it
    (short landscape phones stay side by side; keep in sync with PORTRAIT_QUERY) */
 @media (max-width: 767px) and (orientation: portrait), (max-width: 767px) and (min-height: 501px), (max-aspect-ratio: 9/10) {
+  /* the wrap spans the whole band; the card sits at its bottom (auto top
+     margin) but, if it is ever taller than the band, it starts at the band's
+     top instead of running up under the header */
   .stage-contact .ct-wrap {
-    top: auto;
+    top: var(--safe-top);
     left: var(--gutter);
     right: var(--gutter);
     bottom: var(--safe-bottom);
     width: auto;
     display: flex;
-    justify-content: center;
-    align-items: flex-end;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
   }
   .stage-contact .ct-panel {
+    flex: none;
+    margin-top: auto;
     max-width: 640px;
     padding: 26px 28px 22px;
     border-radius: 26px;
@@ -463,9 +514,6 @@
     font-size: 9.5px;
     letter-spacing: 0.04em;
   }
-  .stage-contact .ct-sign {
-    display: none;
-  }
 }
 
 /* the smallest landscape phones (≈667×375): one more step down */
@@ -501,4 +549,30 @@
     font-size: 9px;
     letter-spacing: 0.02em;
   }
+}
+
+/* ---- the reflow width (≈320px): the address must fit inside its pill
+   (selectors outrank the fit levels' .ct-mail rules) */
+@media (max-width: 340px) {
+  .stage-contact .ct-cta .ct-mail {
+    min-width: 0;
+    font-size: 13px;
+    padding-left: 11px;
+    padding-right: 11px;
+    letter-spacing: -0.02em;
+  }
+  .stage-contact .ct-cta .ct-copy {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .stage-contact .ct-cta .ct-ico,
+  .stage-contact .ct-cta .ct-go {
+    display: none;
+  }
+}
+
+/* phones (html.lowfx): the card has no backdrop blur, so it takes a denser
+   fill here; the halo and the slits stay behind the mark, not in the copy */
+.lowfx .stage-contact .ct-panel {
+  --glass-fill: rgba(10, 10, 12, 0.94);
 }

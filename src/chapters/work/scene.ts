@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
-import { G, frosted, polished } from '../../kit/glass'
+import { G, flattenCaps, frosted, polished, smoothSides } from '../../kit/glass'
 import { placeholderTexture } from '../../kit/images'
 import type { WorkItem } from '../../content'
 import { MONO, SANS, spaced, textPlate, type TextPlate } from './text'
@@ -56,8 +56,16 @@ const SHOT_Z = -FRONT - 0.075
 /* directory bars */
 export const BAR_W = 2.06
 export const BAR_H = 0.17
-const BAR_D = 0.03
-const BAR_B = 0.014
+/*
+ * A thin bar seen nearly edge-on turns any flat side wall into a sub-pixel
+ * sliver that catches the studio at grazing and breaks into dashes. So the
+ * bar's edge is one continuous round (two quarter bevels meeting over a
+ * vanishing wall): only a single silhouette edge, which MSAA resolves.
+ */
+const BAR_D = 0.004
+const BAR_B = 0.026
+/** bevel reach in the face plane, as a fraction of its depth */
+const BAR_BS = 0.72
 const BAR_GAP = 0.036
 export const BAR_PITCH = BAR_H + BAR_GAP
 const BAR_FRONT = BAR_D / 2 + BAR_B
@@ -65,7 +73,7 @@ export const STACK_Y = 0.1 + (9 * BAR_PITCH) / 2 + 0.12
 export const STACK_H = 9 * BAR_PITCH - BAR_GAP
 /** each bar's site band: right half of the bar, inset so it never shows through the gaps */
 const BAND_W = 0.84
-const BAND_H = 0.112
+const BAND_H = 0.102
 const BAND_X = BAR_W / 2 - BAND_W / 2 - 0.07
 const BAND_Z = -BAR_FRONT - 0.05
 /** which horizontal slice of the screenshot the band shows (v from the bottom) */
@@ -217,8 +225,8 @@ function roundedRect(w: number, h: number, r: number): THREE.Shape {
  * A glass slab w x h (outer, incl. bevel), centred, facing +z, with material
  * groups kept: 0 = front/back caps (frosted), 1 = sides + bevel (polished).
  */
-function slabGeometry(w: number, h: number, depth: number, bevel: number, radius: number, segs: number): THREE.BufferGeometry {
-  const bs = bevel * 0.85
+function slabGeometry(w: number, h: number, depth: number, bevel: number, radius: number, segs: number, reach = 0.85): THREE.BufferGeometry {
+  const bs = bevel * reach
   const g = new THREE.ExtrudeGeometry(roundedRect(w - 2 * bs, h - 2 * bs, radius), {
     depth,
     bevelEnabled: true,
@@ -231,6 +239,11 @@ function slabGeometry(w: number, h: number, depth: number, bevel: number, radius
   g.translate(0, 0, -depth / 2)
   // non-indexed: creased normals come back on the same geometry, groups intact
   const out = toCreasedNormals(g, Math.PI / 5)
+  // clean normals: one consistent, area-weighted normal per bevel corner (the
+  // two triangles of a long bevel quad agree, so a strip highlight runs as an
+  // unbroken line instead of dashes and specks) and exactly flat caps
+  smoothSides(out)
+  flattenCaps(out)
   out.computeBoundingBox()
   out.computeBoundingSphere()
   return out
@@ -281,6 +294,98 @@ function glowMaterial(
   })
 }
 
+const STUDIO_W = 1024
+const STUDIO_H = 512
+
+/*
+ * The studio, per texel, on the GPU: one fullscreen pass into a HalfFloat
+ * target (~7 ms with the PMREM prefilter; the same maths per texel in JS cost
+ * ~125 ms, ~510 ms at 4x CPU). Row 0 is the bottom (lat -90°), exactly as the
+ * DataTexture it replaced was laid out; the output matches it to within one
+ * half-float step, so PMREM sees the same equirect.
+ */
+const STUDIO_FRAG = /* glsl */ `
+varying vec2 vUv;
+const float PI = 3.141592653589793;
+const float D = PI / 180.0;
+float wrapA( float a ) { return atan( sin( a ), cos( a ) ); }
+float band( float x, float s ) { return exp( -x * x / ( 2.0 * s * s ) ); }
+float win( float x, float a, float b, float soft ) {
+  float t0 = clamp( ( x - a ) / soft + 0.5, 0.0, 1.0 );
+  float t1 = clamp( ( b - x ) / soft + 0.5, 0.0, 1.0 );
+  return t0 * t0 * ( 3.0 - 2.0 * t0 ) * ( t1 * t1 * ( 3.0 - 2.0 * t1 ) );
+}
+void main() {
+  float lat = ( vUv.y - 0.5 ) * PI;
+  float a = ( vUv.x - 0.5 ) * 2.0 * PI;
+  float cl = cos( lat );
+  float v = 0.0;
+  // key softbox, front-left (reads on the left bevels)
+  v += 7.0 * band( wrapA( a - 150.0 * D ) * cl, 1.1 * D ) * win( lat, -42.0 * D, 58.0 * D, 6.0 * D );
+  // fill softbox, front-right (right bevels)
+  v += 3.2 * band( wrapA( a - 28.0 * D ) * cl, 0.9 * D ) * win( lat, -38.0 * D, 52.0 * D, 6.0 * D );
+  // hairline overhead strip (top edges)
+  v += 5.0 * band( lat - 61.0 * D, 0.7 * D ) * win( a, 25.0 * D, 155.0 * D, 10.0 * D );
+  // a horizon ring and a low ring, open toward the viewer so a clear face
+  // never mirrors them: every vertical / bottom bevel always holds a line
+  float away = 1.0 - band( wrapA( a - 90.0 * D ), 30.0 * D );
+  v += 2.4 * band( lat - 2.0 * D, 0.8 * D ) * away;
+  v += 1.2 * band( lat + 48.0 * D, 1.2 * D ) * away;
+  // a broad soft sky for the top bevels
+  v += 0.5 * win( lat, 44.0 * D, 80.0 * D, 12.0 * D ) * away;
+  // the slash: a line in (a, lat) from (128°, -26°) to (158°, 34°)
+  vec2 s0 = vec2( 128.0, -26.0 ) * D;
+  vec2 sd = vec2( 30.0, 60.0 ) * D;
+  float px = wrapA( a - s0.x );
+  float py = lat - s0.y;
+  float t = clamp( ( px * sd.x + py * sd.y ) / dot( sd, sd ), 0.0, 1.0 );
+  float ex = ( px - t * sd.x ) * cl;
+  float ey = py - t * sd.y;
+  v += 6.0 * band( sqrt( ex * ex + ey * ey ), 0.6 * D ) * win( t, 0.02, 0.98, 0.08 );
+  // a faint broad glow toward the viewer: satin sheen on sandblasted faces
+  float da = wrapA( a - 90.0 * D ) * cl;
+  float dl = lat - 12.0 * D;
+  float sg = 34.0 * D;
+  v += 0.09 * exp( -( da * da + dl * dl ) / ( 2.0 * sg * sg ) );
+  gl_FragColor = vec4( v, v, v * 1.02, 1.0 );
+}
+`
+
+/** Render the studio equirect (linear HDR) into a HalfFloat target. The caller disposes it. */
+export function studioEquirect(renderer: THREE.WebGLRenderer): THREE.WebGLRenderTarget {
+  const rt = new THREE.WebGLRenderTarget(STUDIO_W, STUDIO_H, {
+    type: THREE.HalfFloatType,
+    format: THREE.RGBAFormat,
+    magFilter: THREE.LinearFilter,
+    minFilter: THREE.LinearFilter,
+    generateMipmaps: false,
+    depthBuffer: false,
+    stencilBuffer: false,
+  })
+  rt.texture.mapping = THREE.EquirectangularReflectionMapping
+  rt.texture.colorSpace = THREE.LinearSRGBColorSpace
+  const geo = new THREE.PlaneGeometry(2, 2)
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4( position.xy, 0.0, 1.0 ); }`,
+    fragmentShader: STUDIO_FRAG,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  })
+  const quad = new THREE.Mesh(geo, mat)
+  quad.frustumCulled = false
+  const scene = new THREE.Scene()
+  scene.add(quad)
+  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+  const prevTarget = renderer.getRenderTarget()
+  renderer.setRenderTarget(rt)
+  renderer.render(scene, cam)
+  renderer.setRenderTarget(prevTarget)
+  geo.dispose()
+  mat.dispose()
+  return rt
+}
+
 /**
  * The Collection's own studio reflections (an HDR equirect built in code,
  * prefiltered once): black, with two tall softboxes, a hairline overhead
@@ -292,82 +397,14 @@ function glowMaterial(
  * faint broad glow toward the viewer gives the sandblasted faces their satin
  * sheen. Azimuth a = atan2(z, x) (three's equirect convention): +z is 90°.
  */
-export async function studioEnv(renderer: THREE.WebGLRenderer, pause: () => Promise<void>): Promise<THREE.Texture> {
-  const W = 1024
-  const H = 512
-  const data = new Uint16Array(W * H * 4)
-  const toHalf = THREE.DataUtils.toHalfFloat
-  const D = Math.PI / 180
-  const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
-  const band = (x: number, s: number) => Math.exp((-x * x) / (2 * s * s))
-  const win = (x: number, a: number, b: number, soft: number) => {
-    const t0 = Math.min(1, Math.max(0, (x - a) / soft + 0.5))
-    const t1 = Math.min(1, Math.max(0, (b - x) / soft + 0.5))
-    return t0 * t0 * (3 - 2 * t0) * (t1 * t1 * (3 - 2 * t1))
-  }
-  // the diagonal slash: a great-ish arc from (a0, l0) to (a1, l1), sampled as a line in (a, lat)
-  const s0 = [128 * D, -26 * D]
-  const s1 = [158 * D, 34 * D]
-  const sdx = s1[0] - s0[0]
-  const sdy = s1[1] - s0[1]
-  const slen2 = sdx * sdx + sdy * sdy
-  for (let y = 0; y < H; y++) {
-    // a few rows per slice: never one long task
-    if (y > 0 && y % 96 === 0) await pause()
-    const lat = ((y + 0.5) / H - 0.5) * Math.PI
-    const cl = Math.cos(lat)
-    for (let x = 0; x < W; x++) {
-      const a = ((x + 0.5) / W - 0.5) * 2 * Math.PI
-      let v = 0
-      // key softbox, front-left (reads on the left bevels)
-      v += 7 * band(wrap(a - 150 * D) * cl, 1.1 * D) * win(lat, -42 * D, 58 * D, 6 * D)
-      // fill softbox, front-right (right bevels)
-      v += 3.2 * band(wrap(a - 28 * D) * cl, 0.9 * D) * win(lat, -38 * D, 52 * D, 6 * D)
-      // hairline overhead strip (top edges)
-      v += 5 * band(lat - 61 * D, 0.7 * D) * win(a, 25 * D, 155 * D, 10 * D)
-      // a horizon ring and a low ring, open toward the viewer so a clear face
-      // never mirrors them: every vertical / bottom bevel always holds a line
-      {
-        const away = 1 - band(wrap(a - 90 * D), 30 * D)
-        v += 2.4 * band(lat - 2 * D, 0.8 * D) * away
-        v += 1.2 * band(lat + 48 * D, 1.2 * D) * away
-        // a broad soft sky for the top bevels
-        v += 0.5 * win(lat, 44 * D, 80 * D, 12 * D) * away
-      }
-      // the slash
-      {
-        const px = wrap(a - s0[0])
-        const py = lat - s0[1]
-        const t = Math.min(1, Math.max(0, (px * sdx + py * sdy) / slen2))
-        const ex = (px - t * sdx) * cl
-        const ey = py - t * sdy
-        v += 6 * band(Math.sqrt(ex * ex + ey * ey), 0.6 * D) * win(t, 0.02, 0.98, 0.08)
-      }
-      // a faint broad glow toward the viewer: satin sheen on sandblasted faces
-      {
-        const da = wrap(a - 90 * D) * cl
-        const dl = lat - 12 * D
-        v += 0.09 * Math.exp(-(da * da + dl * dl) / (2 * (34 * D) ** 2))
-      }
-      const i = (y * W + x) * 4
-      const hv = toHalf(v)
-      data[i] = hv
-      data[i + 1] = hv
-      data[i + 2] = toHalf(v * 1.02)
-      data[i + 3] = toHalf(1)
-    }
-  }
-  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.HalfFloatType)
-  tex.mapping = THREE.EquirectangularReflectionMapping
-  tex.colorSpace = THREE.LinearSRGBColorSpace
-  tex.magFilter = THREE.LinearFilter
-  tex.minFilter = THREE.LinearFilter
-  tex.generateMipmaps = false
-  tex.needsUpdate = true
+export async function studioEnv(renderer: THREE.WebGLRenderer, pause?: () => Promise<void>): Promise<THREE.Texture> {
+  const src = studioEquirect(renderer)
+  // the studio shader compiles on its own frame; PMREM's blur on the next
+  if (pause) await pause()
   const pmrem = new THREE.PMREMGenerator(renderer)
-  const rt = pmrem.fromEquirectangular(tex)
+  const rt = pmrem.fromEquirectangular(src.texture)
   pmrem.dispose()
-  tex.dispose()
+  src.dispose()
   return rt.texture
 }
 
@@ -548,8 +585,11 @@ export function buildGallery(featured: WorkItem[], rest: WorkItem[], mobile: boo
   stack.rotation.y = -STACK_THETA
   root.add(stack)
 
-  const barGeo = slabGeometry(BAR_W, BAR_H, BAR_D, BAR_B, 0.02, mobile ? 3 : 5)
+  const barGeo = slabGeometry(BAR_W, BAR_H, BAR_D, BAR_B, 0.03, mobile ? 6 : 8, BAR_BS)
   const sides = sidesBase.clone()
+  // a short optical path through the round rim: it shows the dark directly
+  // behind it, not a refracted sliver of the site band
+  sides.thickness = 0.012
   thawTransmission(sides)
   glassMats.push(sides)
 

@@ -10,7 +10,11 @@ import { BRAND, CONTACT, OTHER_CONCEPTS } from '../../content'
  * Layout is MEASURED (on resize / font load / size change, never per frame)
  * so the mark can sit in whatever space the card leaves: `art` is that free
  * rectangle in CSS px. Short screens step the card down through fit levels
- * until it leaves the mark enough room.
+ * until it leaves the mark enough room:
+ *   fit-1..3  type and spacing step down
+ *   fit-4     'Other concepts' folds behind a disclosure in the footer row and
+ *             the colophon line drops (both are in the copy layer and ?read)
+ *   fit-5     the Other-concepts block goes entirely (never while it is open)
  */
 
 export interface Rect {
@@ -33,6 +37,8 @@ export interface Hud {
   copiedAt: number
   /** the pointer / focus is on the address or the copy button */
   hover: boolean
+  /** the compact card's 'Other concepts' disclosure is open */
+  moreOpen: boolean
 }
 
 export interface HudLayout {
@@ -130,6 +136,7 @@ export function buildHud(stage: HTMLElement): Hud {
   const more = el('div', 'ct-more', undefined, panel)
   el('p', 'hud-label ct-more-label', 'Other concepts', more)
   const list = el('ul', 'ct-links', undefined, more)
+  list.id = 'ct-links'
   for (const c of OTHER_CONCEPTS) {
     const li = el('li', '', undefined, list)
     const a = el('a', 'ct-link', undefined, li)
@@ -141,6 +148,13 @@ export function buildHud(stage: HTMLElement): Hud {
   }
 
   const foot = el('div', 'ct-foot', undefined, panel)
+  // compact cards (fit-4): 'Other concepts' folds into this toggle beside Back to top
+  const moreBtn = el('button', 'ct-top ct-more-btn', undefined, foot)
+  moreBtn.type = 'button'
+  moreBtn.setAttribute('aria-expanded', 'false')
+  moreBtn.setAttribute('aria-controls', list.id)
+  el('span', '', 'Other concepts', moreBtn)
+  el('span', 'ct-arr ct-more-arr', '+', moreBtn).setAttribute('aria-hidden', 'true')
   const top = el('button', 'ct-top', undefined, foot)
   top.type = 'button'
   el('span', '', 'Back to top', top)
@@ -159,7 +173,14 @@ export function buildHud(stage: HTMLElement): Hud {
     el('span', 'ct-nw', p, legal)
   })
 
-  const hud: Hud = { stage, probe, wrap, panel, title, mail, copyBtn, dirty: true, copiedAt: -1e9, hover: false }
+  const hud: Hud = { stage, probe, wrap, panel, title, mail, copyBtn, dirty: true, copiedAt: -1e9, hover: false, moreOpen: false }
+
+  moreBtn.addEventListener('click', () => {
+    hud.moreOpen = !hud.moreOpen
+    more.classList.toggle('is-open', hud.moreOpen)
+    moreBtn.setAttribute('aria-expanded', String(hud.moreOpen))
+    hud.dirty = true
+  })
 
   const on = () => (hud.hover = true)
   const off = () => (hud.hover = false)
@@ -196,7 +217,15 @@ export function buildHud(stage: HTMLElement): Hud {
   return hud
 }
 
-const FIT = ['ct-fit-1', 'ct-fit-2', 'ct-fit-3'] as const
+const FIT = ['ct-fit-1', 'ct-fit-2', 'ct-fit-3', 'ct-fit-4', 'ct-fit-5'] as const
+
+/** Bottom of the chrome's brand lockup (CSS px), or -1 when it isn't there. */
+function brandBottom() {
+  const b = document.querySelector<HTMLElement>('#chrome a.ch-brand') ?? document.querySelector<HTMLElement>('a.ch-brand')
+  if (!b) return -1
+  const r = b.getBoundingClientRect()
+  return r.height > 0 ? r.bottom : -1
+}
 
 /** Measure the card and the free area beside / above it (resize-time only). */
 export function measureHud(hud: Hud, W: number, H: number, allowFit = true): HudLayout {
@@ -205,9 +234,16 @@ export function measureHud(hud: Hud, W: number, H: number, allowFit = true): Hud
   stage.classList.remove(...FIT)
   const band = hud.probe.getBoundingClientRect()
   const bandH = Math.max(1, band.height)
-  // portrait: the card may take most of the band, the mark lives above it
-  const limit = portrait ? bandH * (W < 420 ? 0.72 : 0.62) : bandH
-  if (allowFit) for (let i = 0; i < FIT.length && hud.panel.offsetHeight > limit; i++) stage.classList.add(FIT[i])
+  // portrait: the card takes the lower part of the band, the mark lives above
+  // it (the payoff must stay big, so phones fold the card before it grows past this)
+  const limit = portrait ? bandH * (H < 720 ? 0.6 : 0.62) : bandH
+  if (allowFit) {
+    for (let i = 0; i < FIT.length && hud.panel.offsetHeight > limit; i++) {
+      // an open disclosure is the visitor's choice: never fold it away under them
+      if (FIT[i] === 'ct-fit-5' && hud.moreOpen) break
+      stage.classList.add(FIT[i])
+    }
+  }
 
   // offset* ignore the reveal transform, so the measure is stable mid-reveal
   const w = hud.wrap.getBoundingClientRect()
@@ -221,9 +257,11 @@ export function measureHud(hud: Hud, W: number, H: number, allowFit = true): Hud
     art = { x0: panel.x1 + gap, x1: band.right, y0: band.top, y1: band.bottom }
   } else {
     const gap = Math.max(14, H * 0.02)
-    // on phones the mark may rise into the top band's empty middle (brand
-    // left, menu right); tablets keep it under the nav pill
-    const top = Math.max(band.top * (W < 600 ? 0.6 : 0.92), 40)
+    // on phones the mark may rise into the top band, but only to just under
+    // the brand lockup (it is as wide as the mark's shoulders); tablets keep
+    // it under the nav pill
+    const bb = brandBottom()
+    const top = W < 600 ? Math.max(bb > 0 ? bb + 6 : band.top * 0.8, 40) : Math.max(band.top * 0.92, 40)
     art = { x0: band.left, x1: band.right, y0: top, y1: Math.max(top + 90, panel.y0 - gap) }
   }
   return { W, H, portrait, art, panel, band: { x0: band.left, y0: band.top, x1: band.right, y1: band.bottom } }

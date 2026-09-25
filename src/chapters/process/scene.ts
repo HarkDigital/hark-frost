@@ -188,7 +188,8 @@ export function makePane(sdf: PatternSdf, mobile: boolean): Pane {
     clearcoat: 1,
     clearcoatRoughness: 0.03,
   })
-  sides.dispersion = mobile ? 0 : 0.3
+  // monochrome: no spectral split on the polished bevel (USE_DISPERSION compiled out)
+  sides.dispersion = 0
   sides.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, su)
     shader.vertexShader = shader.vertexShader
@@ -238,6 +239,7 @@ export function makeFilm(sdf: PatternSdf, keep: 1 | -1, margin: number): Film {
     uSdf: { value: sdf.tex },
     uSdfScale: { value: sdf.scale * keep },
     uRect: { value: new THREE.Vector4(-PANE.w / 2, -PANE.h / 2, PANE.w, PANE.h) },
+    uMargin: { value: margin },
     uCut: { value: 1 },
   }
   mat.onBeforeCompile = shader => {
@@ -246,13 +248,32 @@ export function makeFilm(sdf: PatternSdf, keep: 1 | -1, margin: number): Film {
       .replace('#include <common>', '#include <common>\nuniform vec4 uRect;\nvarying vec2 vPUv;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPUv = (position.xy - uRect.xy) / uRect.zw;')
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D uSdf;\nuniform float uSdfScale, uCut;\nvarying vec2 vPUv;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uSdf;\nuniform vec4 uRect;\nuniform float uSdfScale, uCut, uMargin;\nvarying vec2 vPUv;')
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
         float fmSd = (texture2D(uSdf, vPUv).r - 0.5) * uSdfScale;
         float fmAa = max(fwidth(fmSd), 1e-5);
         diffuseColor.a *= mix(1.0, smoothstep(-fmAa, fmAa, fmSd), uCut);`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        // the satin sheen of the sheet: a soft overhead strip seen in its mirror
+        // direction (it slides across the film as the film is laid), a grazing lift
+        vec3 fmV = normalize(vViewPosition);
+        vec3 fmR = reflect(-fmV, normal);
+        float fmBox = smoothstep(-0.2, 0.3, fmR.y) * (1.0 - smoothstep(0.55, 0.95, fmR.y)) * (1.0 - smoothstep(0.3, 0.85, abs(fmR.x)));
+        float fmG = 1.0 - clamp(dot(normal, fmV), 0.0, 1.0);
+        float fmFres = fmG * fmG * fmG;
+        // the sheet's own edge (its thickness catches the light) and, once cut, a faint lit cut edge
+        vec2 fmP = vPUv * uRect.zw;
+        vec2 fmE2 = min(fmP - uMargin, uRect.zw - uMargin - fmP);
+        float fmE = min(fmE2.x, fmE2.y);
+        float fmEa = max(fwidth(fmE), 1e-5);
+        float fmEdge = exp(-(fmE * fmE) / (fmEa * fmEa * 1.4));
+        float fmCutEdge = exp(-(fmSd * fmSd) / (fmAa * fmAa * 1.2)) * uCut;
+        totalEmissiveRadiance += vec3(0.86, 0.89, 0.94) * (fmBox * 0.1 + fmFres * 0.12 + fmEdge * 0.4 + fmCutEdge * 0.16);`,
       )
   }
   // both pieces share one program (the side kept is a uniform sign)
@@ -355,7 +376,8 @@ export function makeBlock(mobile: boolean): Block {
     attenuationColor: new THREE.Color('#e9f1f7'),
     attenuationDistance: 5,
   })
-  mat.dispersion = mobile ? 0 : 0.4
+  // monochrome: no spectral split at the corners (USE_DISPERSION compiled out)
+  mat.dispersion = 0
   sharpTransmission(mat)
   const mesh = new THREE.Mesh(geo, mat)
   root.add(mesh)

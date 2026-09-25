@@ -220,6 +220,8 @@ export default function create(): Chapter {
       const w = ctx.world.params
       const post = ctx.post.params
       const rm = frame.reducedMotion
+      // calm: reduced motion or Motion off — no sway, no time-driven drift
+      const still = rm || ctx.reducedMotion || !!frame.still
       const t = frame.time
       const dt = frame.dt
       if (Math.abs(local - lastLocal) > 0.04) snap = true
@@ -239,7 +241,7 @@ export default function create(): Chapter {
       calm = snap ? calmV : damp(calm, calmV, calmV < calm ? 10 : 2.5, dt)
 
       // ---------- the column
-      const idle = rm ? 0 : 1
+      const idle = still ? 0 : 1
       const yaw = YAW + 0.1 * local + idle * 0.012 * Math.sin(t * 0.21)
       deck.column.rotation.y = yaw
       deck.column.position.y = idle * 0.012 * Math.sin(t * 0.37)
@@ -336,8 +338,12 @@ export default function create(): Chapter {
       }
       snap = false
 
-      // ---------- post: deep vignette, bloom only on the brightest etched lines
-      post.bloomStrength = 0.26
+      // ---------- post: deep vignette, bloom only on the brightest etched lines.
+      // Measured: with a plate presented, bloom is the soft neon bleed around
+      // the etched icon and the glint on the lit bevels (up to 137/255 on/off);
+      // with the column at rest (intro, landing, out) nothing crosses the
+      // threshold (max 1/255), so the pass is switched off there.
+      post.bloomStrength = 0.26 * smoothstep(0.05, 0.5, open)
       post.bloomRadius = 0.3
       post.bloomThreshold = 1.05
       post.vignette = 0.58
@@ -366,7 +372,7 @@ export default function create(): Chapter {
       out.target.copy(pose.target)
       out.fov = pose.fov
       out.roll = 0
-      out.parallax = frame.mobile || frame.reducedMotion ? 0 : 0.18
+      out.parallax = frame.mobile || frame.reducedMotion || frame.still ? 0 : 0.18
     },
   }
 

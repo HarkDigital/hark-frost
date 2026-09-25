@@ -223,6 +223,8 @@ class Work implements Chapter {
   private listDock!: HTMLElement
   private list!: HTMLElement
   private listTitle!: HTMLElement
+  /** the rows' scroll box (landscape, when nine rows can't fit above 'Say hello') */
+  private rowsEl!: HTMLElement
   private rows: HTMLAnchorElement[] = []
   private hoverRow = -1
   private curRow = -2
@@ -236,7 +238,8 @@ class Work implements Chapter {
   private tmp = new THREE.Vector3()
   /** per directory bar: 0 = frosted, 1 = thawed (damped) */
   private sel: number[] = REST.map(() => 0)
-  private lastT = -1
+  /** per featured panel: how thawed (reused every frame) */
+  private thaw: number[] = FEATURED.map(() => 0)
 
   async init(ctx: ChapterContext) {
     this.ctx = ctx
@@ -346,6 +349,8 @@ class Work implements Chapter {
       allLive ? `${esc(count9)} more, <em>all live.</em>` : `${esc(count9)} <em>more.</em>`,
     )
     const ol = el('ol', 'wk-rows', undefined, this.list)
+    this.rowsEl = ol
+    ol.addEventListener('scroll', () => this.rowsEdges(), { passive: true })
     REST.forEach((w, j) => {
       const li = el('li', '', undefined, ol)
       const a = el('a', 'wk-row', undefined, li)
@@ -421,6 +426,7 @@ class Work implements Chapter {
       introB: this.intro.offsetHeight > 0 ? this.intro.offsetTop + this.intro.offsetHeight : H * 0.35,
       introR: this.intro.offsetWidth > 0 ? this.intro.offsetLeft + this.intro.offsetWidth : W * 0.45,
     }
+    this.rowsEdges()
     return this.lay
   }
 
@@ -550,8 +556,9 @@ class Work implements Chapter {
   update(local: number, frame: Frame, ctx: ChapterContext) {
     const l = clamp(local)
     const time = frame.time
-    const dt = this.lastT < 0 ? 1 : Math.min(0.1, Math.max(0, time - this.lastT))
-    this.lastT = time
+    // damping runs on frame.dt: frame.time holds still with Motion off, and a
+    // row's thaw must still settle there
+    const dt = Math.min(0.1, Math.max(0, frame.dt))
     const reduced = this.reduced || frame.reducedMotion
     const still = reduced || !!frame.still
     this.ensureLayout(frame)
@@ -565,10 +572,10 @@ class Work implements Chapter {
 
     // ---- thaw state
     let thawMax = 0
-    const thaw: number[] = []
+    const thaw = this.thaw
     for (let k = 0; k < NF; k++) {
       const t = thawOf(k, l)
-      thaw.push(t)
+      thaw[k] = t
       thawMax = Math.max(thawMax, t)
     }
     const inList = l > F1 + 0.35 * SPAN
@@ -600,13 +607,15 @@ class Work implements Chapter {
     const scene = this.group.parent as THREE.Scene | null
     if (scene && (scene as THREE.Scene).isScene) for (const m of gal.glass) m.envMapRotation.copy(scene.environmentRotation)
 
-    // ---- post: deep vignette, bloom only on hard glints; a breath of
-    // condensation on the glide to the directory
+    // ---- post: deep vignette; a breath of condensation on the glide to the
+    // directory. Bloom only where a thawed pane's polished edges throw hard
+    // glints (the six items): measured, the intro and the directory are
+    // pixel-identical without it, so the pass is off there.
     const pp = ctx.post.params
     const fp = clamp((l - F1) / (LIST_IN - F1 + 0.01))
     pp.frost = Math.sin(Math.PI * fp) * (reduced ? 0.08 : 0.2)
     pp.vignette = 0.7
-    pp.bloomStrength = 0.32
+    pp.bloomStrength = 0.32 * smoothstep(F0 - 0.02, F0 + 0.1 * SPAN, l) * (1 - smoothstep(F1, LIST_IN, l))
     pp.bloomThreshold = 1.05
 
     // ---- panels
@@ -666,6 +675,8 @@ class Work implements Chapter {
       if (selIdx !== this.curRow) {
         this.rows.forEach((r, j) => r.classList.toggle('is-cur', j === selIdx))
         this.curRow = selIdx
+        // scrolled by the story (not hovered): keep that row in the rows' view
+        if (selIdx >= 0 && selIdx !== this.hoverRow) this.showRow(selIdx, still)
       }
     }
 
@@ -684,6 +695,31 @@ class Work implements Chapter {
     // a list that hides under a still cursor never gets its pointerleave
     if (listV <= 0.01) this.hoverRow = -1
     setRise(this.listTitle, listV > 0.35)
+  }
+
+  /** Mark whether the rows box overflows and which ends are scrolled away (CSS fades them). */
+  private rowsEdges() {
+    const box = this.rowsEl
+    const over = box.scrollHeight > box.clientHeight + 1
+    box.classList.toggle('is-over', over)
+    // only while the rows overflow: a wheel over them scrolls the rows, not the story
+    box.toggleAttribute('data-lenis-prevent', over)
+    box.classList.toggle('at-top', box.scrollTop <= 1)
+    box.classList.toggle('at-end', box.scrollTop + box.clientHeight >= box.scrollHeight - 1)
+  }
+
+  /** Scroll the rows box (only when it overflows) so row j sits inside it. */
+  private showRow(j: number, instant: boolean) {
+    const box = this.rowsEl
+    if (!box || box.scrollHeight <= box.clientHeight + 1) return
+    const b = box.getBoundingClientRect()
+    const r = this.rows[j].getBoundingClientRect()
+    const pad = 6
+    let top = box.scrollTop
+    if (r.top < b.top + pad) top += r.top - b.top - pad
+    else if (r.bottom > b.bottom - pad) top += r.bottom - b.bottom + pad
+    else return
+    box.scrollTo({ top, behavior: instant ? 'auto' : 'smooth' })
   }
 
   camera(_local: number, _frame: Frame, out: CameraPose) {

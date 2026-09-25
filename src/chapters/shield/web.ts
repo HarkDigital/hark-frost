@@ -11,8 +11,10 @@ import { rng } from '../../core/math'
  * CRUSH star marks the point of impact.
  *
  * Every point carries a growth time `g` (≈ distance from the impact / reach,
- * 0..~1.05): the fracture is grown by scroll (visible where g < uGrow) and
- * healed from the edges inward (visible where g < uHeal).
+ * 0..~1.05): the fracture is grown by scroll (visible where g < uGrow), then
+ * healed as a material process: frost crystals grow off the seams by g (from
+ * the impact outward) and the condensation front covers them from the
+ * plate's edges inward.
  */
 
 export type V2 = [number, number]
@@ -211,19 +213,29 @@ export function buildWeb(o: { w: number; h: number; impact: V2; radials: number;
 }
 
 /**
- * Ribbons along the crack lines: thin quads with mitred joints, lying flat at
- * `z`. Attributes: aG (growth time), aS (-1..1 across the ribbon), aK (weight).
+ * Ribbons along the crack lines, lying flat at `z`, mitred at the joints and
+ * WIDE: each carries the razor-thin crack core down its middle and room on
+ * either side for the frost crystals that later grow off it.
+ *
+ *   aM = (g growth time, s -1..1 across, k brightness weight)
+ *   aC = (u distance along the line + a per-line offset, ribbon half-width,
+ *         core half-width, crystal reach) — all in plate units
  */
-export function webGeometry(lines: CrackLine[], z: number, widthScale = 1): THREE.BufferGeometry {
+export function webGeometry(lines: CrackLine[], z: number, o: { widthScale?: number; reach?: number; seed?: number } = {}): THREE.BufferGeometry {
+  const widthScale = o.widthScale ?? 1
+  const reachMax = o.reach ?? 0.05
+  const R = rng(o.seed ?? 5)
   const pos: number[] = []
-  const gA: number[] = []
-  const sA: number[] = []
-  const kA: number[] = []
+  const mA: number[] = []
+  const cA: number[] = []
   const idx: number[] = []
   for (const ln of lines) {
     const P = ln.pts
     const n = P.length
     if (n < 2) continue
+    // heavier cracks grow longer crystals (radials 1, rings .75, forks .6, the crush star .25)
+    const reach = reachMax * Math.min(1, Math.max(0.25, (ln.w0 - 0.003) / 0.0048))
+    const u0 = R() * 40
     const cum = [0]
     for (let j = 1; j < n; j++) cum.push(cum[j - 1] + dist(P[j], P[j - 1]))
     const total = cum[n - 1] || 1
@@ -243,14 +255,15 @@ export function webGeometry(lines: CrackLine[], z: number, widthScale = 1): THRE
         const sl = Math.hypot(sx, sy) || 1
         scale = 1 / Math.max(0.6, Math.abs(tx * (sx / sl) + ty * (sy / sl)))
       }
-      const hw = ((ln.w0 + (ln.w1 - ln.w0) * (cum[j] / total)) / 2) * scale * widthScale
+      const core = ((ln.w0 + (ln.w1 - ln.w0) * (cum[j] / total)) / 2) * widthScale
+      const hw = (core * 2.5 + reach) * scale
       const nx = -ty * hw
       const ny = tx * hw
       pos.push(P[j][0] + nx, P[j][1] + ny, z)
       pos.push(P[j][0] - nx, P[j][1] - ny, z)
-      gA.push(ln.g[j], ln.g[j])
-      sA.push(-1, 1)
-      kA.push(ln.k, ln.k)
+      mA.push(ln.g[j], -1, ln.k, ln.g[j], 1, ln.k)
+      const u = u0 + cum[j]
+      cA.push(u, hw, core, reach, u, hw, core, reach)
     }
     for (let j = 0; j < n - 1; j++) {
       const q = base + j * 2
@@ -259,61 +272,136 @@ export function webGeometry(lines: CrackLine[], z: number, widthScale = 1): THRE
   }
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-  geo.setAttribute('aG', new THREE.Float32BufferAttribute(gA, 1))
-  geo.setAttribute('aS', new THREE.Float32BufferAttribute(sA, 1))
-  geo.setAttribute('aK', new THREE.Float32BufferAttribute(kA, 1))
+  geo.setAttribute('aM', new THREE.Float32BufferAttribute(mA, 3))
+  geo.setAttribute('aC', new THREE.Float32BufferAttribute(cA, 4))
   geo.setIndex(idx)
   geo.computeBoundingSphere()
   return geo
 }
 
+export interface WebUniforms {
+  [name: string]: THREE.IUniform
+  /** the fracture's growth front (g units); < 0 = not struck */
+  uGrow: { value: number }
+  /** the hot head riding the growth front */
+  uHead: { value: number }
+  uIntensity: { value: number }
+  uColor: { value: THREE.Color }
+  uHot: { value: THREE.Color }
+  /** the hostile light leaking out along the seams */
+  uFlank: { value: THREE.Color }
+  uFlankK: { value: number }
+  /** the crystal front (g units): frost grows off the seams from the impact outward */
+  uCryst: { value: number }
+  uCrystColor: { value: THREE.Color }
+  /** the re-frost front (shared with the face, VEIL_GLSL) */
+  uFront: { value: number }
+  uHalf: { value: THREE.Vector2 }
+}
+
 /**
- * Crack light: a razor-thin bright core. Visible where aG < uGrow (growth)
- * and aG < uHeal (healing retracts from the edges inward); a hotter head rides
- * the growth front. Drawn in the OPAQUE list (premultiplied, no depth write)
- * after the pane's face, so the laminate that later slides in front sees it.
+ * Crack light and frost crystals. The crack: a razor-thin bright core
+ * (coverage-preserving, so it never breaks into dashes far away) with the
+ * hostile light glowing out of the seam. The heal: white crystalline fuzz
+ * thickens along the seam and fern-like needles grow off both sides, leaning
+ * outward the way frost ferns grow. Everything vanishes beneath the
+ * condensation front. Drawn in the OPAQUE list (premultiplied, no depth
+ * write) after the plate's face.
  */
-export function webMaterial(): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      uGrow: { value: 0 },
-      uHeal: { value: 2 },
-      uIntensity: { value: 1 },
-      uColor: { value: new THREE.Color(1, 1, 1) },
-      uHot: { value: new THREE.Color(1, 1, 1) },
-      uHead: { value: 1 },
-    },
+export function webMaterial(veilGlsl: string, half: THREE.Vector2): { mat: THREE.ShaderMaterial; u: WebUniforms } {
+  const u: WebUniforms = {
+    uGrow: { value: -1 },
+    uHead: { value: 1 },
+    uIntensity: { value: 1 },
+    uColor: { value: new THREE.Color(1, 1, 1) },
+    uHot: { value: new THREE.Color(1, 1, 1) },
+    uFlank: { value: new THREE.Color(1, 0.2, 0.2) },
+    uFlankK: { value: 0 },
+    uCryst: { value: -1 },
+    uCrystColor: { value: new THREE.Color(1, 1, 1) },
+    uFront: { value: -1 },
+    uHalf: { value: half.clone() },
+  }
+  const mat = new THREE.ShaderMaterial({
+    uniforms: u,
     vertexShader: /* glsl */ `
-      attribute float aG;
-      attribute float aS;
-      attribute float aK;
-      varying float vG;
-      varying float vS;
-      varying float vK;
+      attribute vec3 aM;
+      attribute vec4 aC;
+      varying vec3 vM;
+      varying vec4 vC;
+      varying vec2 vPane;
       void main() {
-        vG = aG; vS = aS; vK = aK;
+        vM = aM; vC = aC;
+        vPane = position.xy;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform float uGrow, uHeal, uIntensity, uHead;
-      uniform vec3 uColor, uHot;
-      varying float vG;
-      varying float vS;
-      varying float vK;
+      uniform float uGrow, uHead, uIntensity, uFlankK, uCryst, uFront;
+      uniform vec3 uColor, uHot, uFlank, uCrystColor;
+      uniform vec2 uHalf;
+      varying vec3 vM;
+      varying vec4 vC;
+      varying vec2 vPane;
+      ${veilGlsl}
+      float sq(float x) { return x * x; }
       void main() {
-        float d = uGrow - vG;
-        float h = uHeal - vG;
-        if (d < 0.0 || h < 0.0) discard;
-        // lines dim as the heal front reaches them
-        float healK = smoothstep(0.0, 0.12, h);
+        // derivatives first, in uniform control flow (never after a discard or inside a branch)
+        float a = abs(vM.y) * vC.y;            // distance from the seam (plate units)
+        vec2 da = vec2(dFdx(a), dFdy(a));
+        vec2 du = vec2(dFdx(vC.x), dFdy(vC.x));
+        float fa = max(abs(da.x) + abs(da.y), 1e-5);
+        float g = vM.x;
+        float d = uGrow - g;
+        if (d < 0.0) discard;
+        float gone = veilCover(vPane, uFront, uHalf);
+        if (gone > 0.999) discard;
+        float keep = 1.0 - gone;
+        float core = vC.z;
+        // razor core, never thinner than ~0.8 px (brightness scaled to keep its coverage)
+        float w = max(core, fa * 0.8);
+        float coreM = (1.0 - smoothstep(w - fa * 0.5, w + fa * 0.5, a)) * (core / w);
         float head = (1.0 - smoothstep(0.0, 0.06, d)) * uHead;
-        float s = abs(vS);
-        float core = 1.0 - smoothstep(0.25, 1.0, s);
-        vec3 c = (uColor + uHot * head * 1.6) * core * uIntensity * vK * healK;
-        // premultiplied: a faint darkening at the flanks (the break interrupts the frost's glow)
-        float a = (1.0 - s * s) * 0.35 * healK * vK;
-        gl_FragColor = vec4(c, a);
+        vec3 col = (uColor + uHot * head * 1.6) * coreM * uIntensity * vM.z;
+        // the hostile light leaking out of the seam
+        float fl = a / (core * 3.0 + fa);
+        col += uFlank * exp(-fl * fl) * uFlankK * vM.z;
+        // frost crystals: a fine white seam, and fern needles off both sides leaning outward
+        float cg = clamp((uCryst - g) / 0.22, 0.0, 1.0);
+        float alpha = exp(-sq(a / (core * 3.0 + fa))) * 0.35 * vM.z;
+        if (cg > 0.0) {
+          float L = vC.w * cg;
+          // the seam itself turns to a white crystalline band
+          float fz = exp(-sq(a / (0.2 * L + core + fa))) * cg;
+          float needles = 0.0;
+          // two tiers: long primaries, short secondaries between them; each needle a
+          // coverage-preserving ~1 px line so it neither vanishes nor aliases
+          for (int k = 0; k < 2; k++) {
+            float P = k == 0 ? 0.03 : 0.012;
+            float m = k == 0 ? 1.1 : 1.5;
+            float t = (vC.x + float(k) * 0.37 - a * m) / P;
+            float id = floor(t + 0.5);
+            vec2 key = vec2(id + float(k) * 91.0, step(0.0, vM.y) * 13.0 + 0.5);
+            float hN = vHash(key);
+            // irregular: each needle nudged off its slot, some slots empty
+            float ctr = id + (vHash(key + 7.3) - 0.5) * 0.5;
+            float live = step(k == 0 ? 0.18 : 0.4, vHash(key + 2.9));
+            float len = L * (k == 0 ? 0.3 + 0.7 * hN * hN : 0.12 + 0.22 * hN) * live;
+            vec2 dt = (du - m * da) / P;
+            float ft = max(abs(dt.x) + abs(dt.y), 1e-4);
+            float hw = max(0.035, ft * 0.55);
+            float nd = (1.0 - smoothstep(hw - ft * 0.5, hw + ft * 0.5, abs(t - ctr))) * (0.035 / hw);
+            nd *= 1.0 - smoothstep(len * 0.85, len + fa, a);
+            nd *= 1.0 - smoothstep(0.35, 0.8, ft);
+            needles += nd * live * (1.0 - 0.45 * clamp(a / max(len, 1e-4), 0.0, 1.0)) * (k == 0 ? 1.0 : 0.75);
+          }
+          // near the impact everything converges: keep it from blooming into a blot
+          float near = 0.35 + 0.65 * smoothstep(0.03, 0.16, g);
+          float cr = (fz * 0.5 + min(needles * 2.6, 1.2)) * near;
+          col = mix(col, col * 0.7, cg) + uCrystColor * cr;
+          alpha += fz * 0.1;
+        }
+        gl_FragColor = vec4(max(col, vec3(0.0)) * keep, clamp(alpha, 0.0, 1.0) * keep);
       }
     `,
     blending: THREE.CustomBlending,
@@ -324,4 +412,5 @@ export function webMaterial(): THREE.ShaderMaterial {
     depthWrite: false,
     toneMapped: false,
   })
+  return { mat, u }
 }

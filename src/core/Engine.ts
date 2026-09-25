@@ -374,7 +374,7 @@ export class Engine {
   private async prewarm() {
     // lit programs key on the environment map: give the scene its real one first
     ;(this.world as unknown as { warmEnv?: () => void }).warmEnv?.()
-    const target = this.post.composer.renderTarget1
+    const target = this.post.scenePass.target
     // Compile each chapter with ONLY its own group (and lights) visible:
     // three keys programs on the visible light set, so compiling everything at
     // once builds variants no chapter ever uses and the real ones link later,
