@@ -347,7 +347,7 @@ export default function create(): Chapter {
       // ---- DOM
       const stage = ctx.stage
       head = el('div', 'pr-head', undefined, stage)
-      el('p', 'hud-eyebrow', 'How we work', head)
+      el('p', 'hud-eyebrow', 'How it works', head)
       headline = rise(el('h2', 'hud-h2 pr-headline', undefined, head), 'We listen first. <em>Then we build.</em>')
 
       cardEl = el('div', 'pr-card hud-panel hud-panel--strong', undefined, stage)

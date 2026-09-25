@@ -32,6 +32,8 @@ export interface EngineState {
 const CUT_WINDOW = 0.18
 /** Render-pixel budget: 4K/5K windows would otherwise push 15+ MP through bloom. */
 const PIXEL_BUDGET = 6e6
+/** device pixels of three's glass (transmission) buffer on desktop; it only ever shrinks with the frame */
+const GLASS_BUDGET = 1.9e6
 
 function emptyChapter(id: string): Chapter {
   return {
@@ -103,6 +105,8 @@ export class Engine {
   private cutHold = 0
   private cutCss = -1
   private cutPeakAt = -1e9
+  /** frames the view has held perfectly still with Motion off (see tick) */
+  private quiet = 0
   /**
    * Ambient motion on/off. When off, frame.time holds still once the intro
    * reveal has had time to play (3 s after 'hark:reveal').
@@ -151,10 +155,8 @@ export class Engine {
     this.world = new World(this.scene, this.mobile, this.renderer)
     this.scene.add(this.world.object)
     this.assets = new Assets(this.renderer)
-    // MSAA only where it pays: 1x desktop screens. Retina is already supersampled,
-    // and multisampled half-float ping-pong targets cost ~1 GB of VRAM there.
-    const msaa = !this.mobile && (window.devicePixelRatio || 1) < 1.5
-    this.post = new Post(this.renderer, this.scene, this.camera, !msaa)
+    // MSAA on the scene render only (Post decides by the frame's DPR)
+    this.post = new Post(this.renderer, this.scene, this.camera)
 
     this.frame = {
       time: 0,
@@ -179,6 +181,8 @@ export class Engine {
 
     this.resize(true)
     window.addEventListener('resize', () => this.resize())
+    // any input wakes a still frame at once (see the Motion-off gate in tick)
+    for (const type of ['keydown', 'focusin', 'click', 'pointerover']) window.addEventListener(type, () => this.wake(), { passive: true })
     const toNdc = (e: PointerEvent) =>
       this.frame.pointerRaw.set((e.clientX / this.cw) * 2 - 1, -(e.clientY / this.ch) * 2 + 1)
     window.addEventListener('pointermove', toNdc)
@@ -476,6 +480,7 @@ export class Engine {
     this.cw = w
     this.ch = h
     this.dpr = dpr
+    this.quiet = 0
     this.renderer.setPixelRatio(dpr)
     this.renderer.setSize(w, h, false)
     this.post.setSize(w, h, dpr)
@@ -563,8 +568,13 @@ export class Engine {
    * 30 fps Low Power Mode cap is not mistaken for a slow GPU), and creep back
    * up once there's headroom.
    */
+  /** Redraw on the next frame even if the view is holding still (chapters/HUD may call it). */
+  wake() {
+    this.quiet = 0
+  }
+
   private adaptResolution(raw: number, dt: number) {
-    if (document.hidden || this.frame.time < 4 || this.jump) return
+    if (document.hidden || this.frame.time < 4 || this.jump || this.quiet > 90) return
     this.cadence.push(raw)
     if (this.cadence.length > 120) this.cadence.shift()
     if (this.cadence.length >= 60 && ++this.cadenceTick % 20 === 0) {
@@ -691,8 +701,10 @@ export class Engine {
     const slot = this.slots[index]
     if (!slot) return
     const local = clamp((scrollVh - slot.start) / slot.def.length)
-    // one site-wide glass-buffer scale (~0.6 of a DPR-2 frame); never resized per chapter
-    const ts = this.mobile ? 0.5 : clamp(1.2 / this.dpr, 0.35, 1)
+    // one site-wide glass buffer from a device-pixel budget (~0.6 of a DPR-2
+    // frame, ~0.7 of a 1440p 1x one); never resized per chapter, and it can
+    // only shrink when adaptive DPR steps the frame down
+    const ts = this.mobile ? 0.5 : clamp(Math.sqrt(GLASS_BUDGET / Math.max(1, this.cw * this.ch * this.dpr * this.dpr)), 0.35, 1)
     if (this.renderer.transmissionResolutionScale !== ts) this.renderer.transmissionResolutionScale = ts
 
     // glitch ramps up approaching any internal cut and back down after it
@@ -726,13 +738,29 @@ export class Engine {
     }
     const calm = this.reducedMotion || !this.motion
     if (calm) {
-      // no ripples or flashes: a quiet, shallow dip instead
+      // no fog, no zooms seen through it: a quiet fade through black covers the swap
       this.post.transition = 0
-      this.post.fade = cutOut * 0.35
+      this.post.fade = cutOut * 0.9
     } else {
       this.post.transition = cutOut
-      this.post.fade = 0
+      // a fling through several chapters: the held fog alone still lets lit
+      // scenes strobe through it, so dim the frame too (eases off with the hold)
+      const fling = clamp((Math.abs(f.velocity) - 2.5) / 1.5)
+      this.post.fade = 0.8 * this.cutHold * fling * fling * (3 - 2 * fling)
     }
+
+    // Motion off and nothing moving: the frame can't change, so don't redraw it
+    // 60 times a second. A 2 fps heartbeat still picks up late textures and
+    // settles damped params; scroll, pointer, jumps, cuts and resizes re-arm it.
+    const settled =
+      !!f.still &&
+      !this.jump &&
+      cutOut === 0 &&
+      index === this.state.index &&
+      Math.abs(vel) < 1e-4 &&
+      Math.abs(f.pointer.x - f.pointerRaw.x) + Math.abs(f.pointer.y - f.pointerRaw.y) < 1e-3
+    this.quiet = settled ? this.quiet + 1 : 0
+    if (this.quiet > 90 && this.quiet % 30 !== 0) return
 
     if (index !== this.state.index || !slot.chapter.group.visible) {
       const prev = this.slots[this.state.index]

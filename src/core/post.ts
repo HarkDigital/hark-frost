@@ -1,13 +1,19 @@
 import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 
 /*
- * Post-processing for Hark Frost: Render → Sanitize (NaN guard) → Bloom →
+ * Post-processing for Hark Frost: Scene (render + NaN guard) → Bloom →
  * Output → FINAL.
+ *
+ * Anti-aliasing: the scene renders into its OWN target, the only
+ * multisampled one (4x whenever the frame is under ~1.75 device px per CSS px:
+ * 1x/1.25x monitors and phones capped at 1.5, so the razor-sharp mark never
+ * stair-steps). The composer's ping-pong targets stay single-sampled, so the
+ * post passes never pay for MSAA.
  *
  * FINAL is a clean, sharp finish for a black site: no chromatic aberration
  * (the mark must stay razor sharp), a deep vignette, a fine grain and flash /
@@ -58,19 +64,19 @@ const FinalShader = {
       vec2 u = f * f * (3.0 - 2.0 * f);
       return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
     }
-    float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { v += a * noise(p); p = p * 2.07 + 5.3; a *= 0.5; } return v; }
+    float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 3; i++) { v += a * noise(p); p = p * 2.07 + 5.3; a *= 0.5; } return v / 0.875; }
 
     vec3 frosted(vec2 uv, float radiusPx) {
       vec2 px = 1.0 / uResolution;
       float a0 = hash(gl_FragCoord.xy) * 6.2831853;
       vec3 acc = vec3(0.0);
-      for (int i = 0; i < 14; i++) {
+      for (int i = 0; i < 10; i++) {
         float fi = float(i);
-        float r = sqrt((fi + 0.5) / 14.0) * radiusPx;
+        float r = sqrt((fi + 0.5) / 10.0) * radiusPx;
         float a = a0 + fi * 2.3999632;
         acc += texture2D(tDiffuse, uv + vec2(cos(a), sin(a)) * r * px).rgb;
       }
-      return acc / 14.0;
+      return acc / 10.0;
     }
 
     void main() {
@@ -90,7 +96,8 @@ const FinalShader = {
       float t = clamp(uTransition, 0.0, 1.0);
       // ---- THE BREATH CUT: a noise-edged fog front
       float fogMask = 0.0;
-      if (t > 0.001) {
+      if (t >= 0.82) fogMask = 1.0;   // fully fogged: no front to shape
+      else if (t > 0.001) {
         float aspect = uResolution.x / max(uResolution.y, 1.0);
         vec2 pc = vec2(c.x * aspect, c.y);
         float r = length(pc) / (0.5 * length(vec2(aspect, 1.0)));   // 0 centre … 1 corners
@@ -106,10 +113,14 @@ const FinalShader = {
         // condensation: lifted, pale, faintly granular
         float grain = hash(floor(gl_FragCoord.xy / (1.6 * uDpr)));
         vec3 fog = f * 0.8 + uFog * (0.07 + 0.05 * grain) * fogMask + 0.02 * fr;
-        // a few clear droplets sparkle in the fog
-        vec2 cell = floor(gl_FragCoord.xy / (22.0 * uDpr));
-        vec2 dp = fract(gl_FragCoord.xy / (22.0 * uDpr)) - 0.5;
-        float drop = step(0.93, hash(cell)) * (1.0 - smoothstep(0.08, 0.2, length(dp)));
+        // a few clear droplets sparkle in the fog: jittered in their cells, each
+        // its own size, each appearing on its own threshold as the fog thickens
+        vec2 cq = gl_FragCoord.xy / (22.0 * uDpr);
+        vec2 cell = floor(cq);
+        float h0 = hash(cell), h1 = hash(cell + 17.3), h2 = hash(cell + 41.9);
+        vec2 dp = fract(cq) - 0.5 - (vec2(h1, h2) - 0.5) * 0.55;
+        float rad = 0.05 + 0.11 * h2;
+        float drop = step(0.93, h0) * (1.0 - smoothstep(rad * 0.45, rad, length(dp))) * smoothstep(h1 * 0.6, h1 * 0.6 + 0.3, fogMask);
         fog = mix(fog, col * 1.05 + 0.05, drop * fogMask);
         col = mix(col, fog, smoothstep(0.0, 0.3, frostK));
       }
@@ -179,8 +190,62 @@ const SanitizeShader = {
   `,
 }
 
+/**
+ * Renders the scene into its own target (the only multisampled one) and
+ * copies it through the NaN guard into the composer's read buffer.
+ */
+class ScenePass extends Pass {
+  target: THREE.WebGLRenderTarget
+  material: THREE.ShaderMaterial
+  private quad: FullScreenQuad
+
+  constructor(
+    private scene: THREE.Scene,
+    private camera: THREE.Camera,
+    w: number,
+    h: number,
+    samples: number,
+  ) {
+    super()
+    this.needsSwap = false
+    this.target = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples })
+    this.material = new THREE.ShaderMaterial({
+      uniforms: THREE.UniformsUtils.clone(SanitizeShader.uniforms),
+      vertexShader: SanitizeShader.vertexShader,
+      fragmentShader: SanitizeShader.fragmentShader,
+    })
+    this.quad = new FullScreenQuad(this.material)
+  }
+
+  setSamples(n: number) {
+    if (this.target.samples === n) return
+    this.target.samples = n
+    this.target.dispose() // re-created with the new sample count on next use
+  }
+
+  setSize(w: number, h: number) {
+    this.target.setSize(w, h)
+  }
+
+  render(renderer: THREE.WebGLRenderer, _write: THREE.WebGLRenderTarget, read: THREE.WebGLRenderTarget) {
+    renderer.setRenderTarget(this.target)
+    renderer.clear()
+    renderer.render(this.scene, this.camera)
+    this.material.uniforms.tDiffuse.value = this.target.texture
+    renderer.setRenderTarget(read)
+    this.quad.render(renderer)
+  }
+
+  dispose() {
+    this.target.dispose()
+    this.material.dispose()
+    this.quad.dispose()
+  }
+}
+
 export class Post {
   composer: EffectComposer
+  scenePass: ScenePass
   bloom: UnrealBloomPass
   final: ShaderPass
   /**
@@ -201,17 +266,13 @@ export class Post {
     private renderer: THREE.WebGLRenderer,
     scene: THREE.Scene,
     camera: THREE.Camera,
-    /** skip MSAA (retina / mobile: already supersampled; MSAA half-float targets are huge) */
-    noMsaa: boolean,
   ) {
     const size = renderer.getDrawingBufferSize(new THREE.Vector2())
-    const rt = new THREE.WebGLRenderTarget(size.x, size.y, {
-      type: THREE.HalfFloatType,
-      samples: noMsaa ? 0 : 4,
-    })
+    // single-sampled ping-pong targets (the composer clones this one)
+    const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType })
     this.composer = new EffectComposer(renderer, rt)
-    this.composer.addPass(new RenderPass(scene, camera))
-    this.composer.addPass(new ShaderPass(SanitizeShader))
+    this.scenePass = new ScenePass(scene, camera, size.x, size.y, Post.samplesFor(renderer.getPixelRatio()))
+    this.composer.addPass(this.scenePass)
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.45, 0.4, 1.0)
     this.composer.addPass(this.bloom)
     this.composer.addPass(new OutputPass())
@@ -252,7 +313,13 @@ export class Post {
     return Promise.all(mats.map(m => this.renderer.compileAsync(new THREE.Mesh(quad.geometry, m), cam).catch(() => {})))
   }
 
+  /** 4x MSAA on the scene render unless the frame is already supersampled */
+  static samplesFor(dpr: number) {
+    return dpr < 1.75 ? 4 : 0
+  }
+
   setSize(w: number, h: number, dpr: number) {
+    this.scenePass.setSamples(Post.samplesFor(dpr))
     this.composer.setPixelRatio(dpr)
     this.composer.setSize(w, h)
     this.bloom.resolution.set((w * dpr) / 2, (h * dpr) / 2)
@@ -277,6 +344,8 @@ export class Post {
       }
       if (!this.flashOk) c.flash = 0
     } else this.flashLive = false
+    // a pass that adds nothing costs nothing: chapters set strength 0 where no highlight crosses
+    this.bloom.enabled = c.bloomStrength > 0.01
     this.bloom.strength = c.bloomStrength
     this.bloom.radius = c.bloomRadius
     this.bloom.threshold = c.bloomThreshold
