@@ -1,0 +1,356 @@
+/* Etched — the services chapter. Every selector is scoped to .stage-services. */
+
+.stage-services {
+  --et-col: min(440px, 34vw);
+  --et-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* empty boxes on the safe bands: the camera fit reads their offsets (hud.ts) */
+.stage-services .et-probe {
+  position: absolute;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  visibility: hidden;
+  pointer-events: none;
+}
+.stage-services .et-probe--top {
+  top: var(--safe-top);
+}
+.stage-services .et-probe--bottom {
+  bottom: var(--safe-bottom);
+}
+
+/* ---------------- intro ---------------- */
+.stage-services .et-intro {
+  position: absolute;
+  left: var(--gutter);
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  width: min(600px, 44vw);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 28px;
+  pointer-events: none;
+}
+.stage-services .et-intro-eyebrow {
+  opacity: 0;
+  transform: translate3d(0, 8px, 0);
+  filter: blur(6px);
+  transition:
+    opacity 0.35s ease,
+    filter 0.35s ease,
+    transform 0.5s var(--et-ease);
+}
+.stage-services .et-intro.is-on .et-intro-eyebrow {
+  opacity: 1;
+  filter: blur(0);
+  transform: none;
+  transition:
+    opacity 0.6s ease,
+    filter 0.7s var(--et-ease),
+    transform 0.9s var(--et-ease);
+}
+.stage-services .et-intro-title {
+  font-size: clamp(3rem, 5.8vw, 6rem);
+  max-width: 10.5ch;
+}
+
+/* ---------------- the card ---------------- */
+.stage-services .et-col {
+  position: absolute;
+  left: var(--gutter);
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  width: var(--et-col);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate3d(-10px, 0, 0);
+  transition:
+    opacity 0.35s ease,
+    transform 0.45s ease,
+    visibility 0s linear 0.45s;
+}
+.stage-services .et-col.is-on {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity 0.7s var(--et-ease),
+    transform 1s var(--et-ease),
+    visibility 0s;
+}
+.stage-services .et-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px 26px 16px;
+}
+.stage-services .et-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+}
+.stage-services .et-cur {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.stage-services .et-of {
+  color: var(--fg-muted);
+  white-space: pre;
+}
+.stage-services .et-rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0));
+}
+
+/* all eleven share one grid cell, so the card never jumps */
+.stage-services .et-stack {
+  display: grid;
+}
+.stage-services .et-item {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  visibility: hidden;
+  transition: visibility 0s linear 0.35s;
+}
+.stage-services .et-item.is-on {
+  visibility: visible;
+  transition: visibility 0s;
+}
+.stage-services .et-title {
+  font-size: clamp(1.9rem, 2.8vw, 2.8rem);
+  line-height: 1.02;
+}
+.stage-services .et-blurb {
+  max-width: 40ch;
+}
+.stage-services .et-blurb,
+.stage-services .et-tags {
+  opacity: 0;
+  filter: blur(6px);
+  transform: translate3d(0, 6px, 0);
+  transition:
+    opacity 0.25s ease,
+    filter 0.25s ease,
+    transform 0.3s ease;
+}
+.stage-services .et-item.is-on .et-blurb,
+.stage-services .et-item.is-on .et-tags {
+  opacity: 1;
+  filter: blur(0);
+  transform: none;
+  transition:
+    opacity 0.6s ease 0.14s,
+    filter 0.7s var(--et-ease) 0.14s,
+    transform 0.9s var(--et-ease) 0.14s;
+}
+.stage-services .et-item.is-on .et-tags {
+  transition-delay: 0.24s;
+}
+
+/* 01–11: a row of small frosted keys; the lit one carries a polished bar */
+.stage-services .et-keys {
+  display: grid;
+  grid-template-columns: repeat(11, minmax(0, 1fr));
+  gap: 3px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.stage-services .et-key {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  min-width: 24px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-faint);
+  cursor: pointer;
+  transition:
+    color 0.3s ease,
+    background 0.4s ease,
+    box-shadow 0.4s ease;
+}
+.stage-services .et-key::after {
+  content: '';
+  position: absolute;
+  left: 30%;
+  right: 30%;
+  bottom: 3px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.2), #ffffff, rgba(255, 255, 255, 0.2));
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.7);
+  opacity: 0;
+  transform: scaleX(0.3);
+  transition:
+    opacity 0.3s ease,
+    transform 0.6s var(--et-ease);
+}
+.stage-services .et-key:hover {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.06);
+}
+.stage-services .et-key.is-on {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.stage-services .et-key.is-on::after {
+  opacity: 1;
+  transform: none;
+}
+.stage-services .et-key:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 1px;
+}
+
+/* ---------------- mid-size landscape ---------------- */
+@media (orientation: landscape) and (max-width: 1100px) {
+  .stage-services {
+    --et-col: min(400px, 40vw);
+  }
+  .stage-services .et-card {
+    gap: 14px;
+    padding: 20px 22px 14px;
+  }
+  .stage-services .et-title {
+    font-size: clamp(1.7rem, 3vw, 2.3rem);
+  }
+  .stage-services .et-blurb {
+    font-size: 14.5px;
+    line-height: 1.55;
+  }
+}
+
+/* ---------------- portrait: the column above, copy as a bottom panel ---------------- */
+@media (orientation: portrait) {
+  .stage-services .et-col {
+    top: auto;
+    right: var(--gutter);
+    width: auto;
+    display: block;
+  }
+  .stage-services .et-intro {
+    top: auto;
+    right: var(--gutter);
+    width: auto;
+    gap: 16px;
+    justify-content: flex-end;
+  }
+  .stage-services .et-intro-title {
+    font-size: clamp(2.6rem, 10.5vw, 4.6rem);
+  }
+}
+@media (orientation: portrait) and (min-width: 640px) {
+  .stage-services .et-col {
+    right: auto;
+    width: min(560px, calc(100vw - 2 * var(--gutter)));
+  }
+}
+@media (orientation: portrait) and (max-width: 639px) {
+  .stage-services .et-card {
+    gap: 12px;
+    padding: 16px 18px 10px;
+  }
+  .stage-services .et-item {
+    gap: 10px;
+  }
+  .stage-services .et-title {
+    font-size: 1.6rem;
+    line-height: 1.04;
+  }
+  .stage-services .et-blurb {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .stage-services .et-tags .hud-tag {
+    font-size: 9.5px;
+    padding: 4px 8px;
+  }
+  .stage-services .et-keys {
+    gap: 2px;
+    padding-top: 8px;
+  }
+  .stage-services .et-key {
+    min-height: 28px;
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+}
+/* short phones: keep the column visible — tighter type, tags live in the copy layer */
+@media (orientation: portrait) and (max-width: 639px) and (max-height: 720px) {
+  .stage-services .et-title {
+    font-size: 1.35rem;
+  }
+  .stage-services .et-blurb {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .stage-services .et-tags {
+    display: none;
+  }
+  .stage-services .et-key {
+    min-height: 26px;
+  }
+}
+
+/* ---------------- short landscape phones: thin chrome bands ---------------- */
+@media (orientation: landscape) and (max-height: 500px) {
+  .stage-services {
+    --et-col: min(380px, 46vw);
+  }
+  .stage-services .et-card {
+    gap: 8px;
+    padding: 12px 16px 8px;
+    border-radius: 16px;
+  }
+  .stage-services .et-head {
+    display: none;
+  }
+  .stage-services .et-item {
+    gap: 6px;
+  }
+  .stage-services .et-title {
+    font-size: 1.25rem;
+  }
+  .stage-services .et-blurb {
+    font-size: 12.5px;
+    line-height: 1.4;
+  }
+  .stage-services .et-tags {
+    display: none;
+  }
+  .stage-services .et-keys {
+    padding-top: 6px;
+  }
+  .stage-services .et-key {
+    min-height: 24px;
+    font-size: 9.5px;
+    letter-spacing: 0;
+  }
+  .stage-services .et-intro {
+    gap: 12px;
+  }
+  .stage-services .et-intro-title {
+    font-size: clamp(2rem, 7vw, 3rem);
+  }
+}

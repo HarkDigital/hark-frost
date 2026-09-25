@@ -175,7 +175,8 @@ export class World {
     panel(12, 0.18, '#ffffff', 6, [0, 2.6, 10]) // crisp front edge line
     panel(10, 6, '#ffffff', 0.5, [0, 2, -11]) // broad soft card behind (frost sheen)
     const pmrem = new THREE.PMREMGenerator(renderer)
-    const rt = pmrem.fromScene(room, 0.012)
+    // a touch more blur: straight polished edges read as continuous highlights, not dashes
+    const rt = pmrem.fromScene(room, 0.028)
     pmrem.dispose()
     room.traverse(o => {
       const m = o as THREE.Mesh

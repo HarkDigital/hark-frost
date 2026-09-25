@@ -241,9 +241,9 @@ export function frosted(o: { frost?: number; thickness?: number; tint?: THREE.Co
   return glass({ frost: o.frost ?? 0.46, thickness: o.thickness ?? 0.7, dispersion: 0, tint: o.tint ?? '#eef3ff', tintDistance: 6, coat: 0, env: o.env ?? 1 })
 }
 
-/** POLISHED edges for frosted objects: crisp reflections + a little dispersion (desktop). */
+/** POLISHED edges for frosted objects: crisp reflections, no dispersion (monochrome, razor sharp). */
 export function polished(o: { thickness?: number } = {}): THREE.MeshPhysicalMaterial {
-  return glass({ frost: 0.015, thickness: o.thickness ?? 0.7, dispersion: 0.3, coat: 1 })
+  return glass({ frost: 0.015, thickness: o.thickness ?? 0.07, dispersion: 0, coat: 1 })
 }
 
 export interface FrostedLogo {
@@ -261,7 +261,9 @@ export interface FrostedLogo {
  * sandblasted front and back faces that glow with whatever light is behind.
  * 1 unit tall, centred, facing +z. Use clone()d materials if you animate them.
  */
-export function frostedLogo(o: { depth?: number; bevel?: number; frost?: number; shapes?: THREE.Shape[] } = {}): FrostedLogo {
+export function frostedLogo(
+  o: { depth?: number; bevel?: number; frost?: number; shapes?: THREE.Shape[]; capThickness?: number; sideThickness?: number; refine?: boolean } = {},
+): FrostedLogo {
   const shapes = o.shapes ?? logoShapes()
   const depth = o.depth ?? 0.16
   const bevel = o.bevel ?? 0.022
@@ -278,14 +280,99 @@ export function frostedLogo(o: { depth?: number; bevel?: number; frost?: number;
   // ExtrudeGeometry is non-indexed: creased normals keep its material groups
   // (0 = front/back caps, 1 = sides + bevel)
   const g2 = toCreasedNormals(geo, Math.PI / 4.5)
+  // clean normals for close-ups: smooth, consistent bevels (no zigzag
+  // reflections) and exactly flat caps (no 'spoke' shading)
+  if (o.refine !== false) {
+    smoothSides(g2)
+    flattenCaps(g2)
+  }
   g2.computeBoundingBox()
   g2.computeBoundingSphere()
-  const caps = frosted({ frost: o.frost ?? 0.46 }).clone()
-  const sides = polished().clone()
+  // short optical paths: thin bevels and flat caps must not scramble what's behind
+  const caps = frosted({ frost: o.frost ?? 0.46, thickness: o.capThickness ?? 0.16 }).clone()
+  const sides = polished({ thickness: o.sideThickness ?? 0.07 }).clone()
   const mark = new THREE.Mesh(g2, [caps, sides])
   const root = new THREE.Group()
   root.add(mark)
   return { root, mark, caps, sides }
+}
+
+/**
+ * The kit's creased normals average each cap triangle's outline vertices with
+ * the first bevel facet, which fans soft 'spokes' of shading across the flat
+ * faces. Caps (group 0) are exactly flat: set their normals to ±z.
+ */
+export function flattenCaps(geo: THREE.BufferGeometry) {
+  const nrm = geo.getAttribute('normal') as THREE.BufferAttribute
+  const pos = geo.getAttribute('position') as THREE.BufferAttribute
+  if (!nrm || !pos || geo.index) return
+  // one cap group per shape (loops, diamond)
+  for (const g of geo.groups) {
+    if (g.materialIndex !== 0) continue
+    for (let i = g.start; i < g.start + g.count; i++) nrm.setXYZ(i, 0, 0, pos.getZ(i) >= 0 ? 1 : -1)
+  }
+  nrm.needsUpdate = true
+}
+
+/**
+ * Consistent smooth normals for the bevel + sides (group 1). The kit's creased
+ * normals average each triangle's neighbours relative to its OWN normal, so
+ * the two triangles of a bevel quad disagree at shared corners and the strip
+ * reflections zigzag along every edge in close-up. Here every side corner at
+ * the same position gets the same area-weighted normal, unless the face turns
+ * away from it by more than `crease` (a real corner stays sharp).
+ */
+export function smoothSides(geo: THREE.BufferGeometry, crease = THREE.MathUtils.degToRad(32)) {
+  const nrm = geo.getAttribute('normal') as THREE.BufferAttribute
+  const pos = geo.getAttribute('position') as THREE.BufferAttribute
+  if (!nrm || !pos || geo.index) return
+  const cosC = Math.cos(crease)
+  const ids = new Int32Array(pos.count).fill(-1)
+  const face = new Float32Array(pos.count * 3)
+  const acc: number[] = []
+  const map = new Map<string, number>()
+  const q = (v: number) => Math.round(v * 2e5)
+  const a = new THREE.Vector3()
+  const b = new THREE.Vector3()
+  const c = new THREE.Vector3()
+  for (const g of geo.groups) {
+    if (g.materialIndex !== 1) continue
+    for (let i = g.start; i + 2 < g.start + g.count; i += 3) {
+      a.fromBufferAttribute(pos, i)
+      b.fromBufferAttribute(pos, i + 1)
+      c.fromBufferAttribute(pos, i + 2)
+      c.sub(a)
+      b.sub(a)
+      b.cross(c) // area-weighted face normal
+      const len = b.length() || 1
+      for (let k = 0; k < 3; k++) {
+        const v = i + k
+        const key = `${q(pos.getX(v))},${q(pos.getY(v))},${q(pos.getZ(v))}`
+        let id = map.get(key)
+        if (id === undefined) {
+          id = acc.length / 3
+          map.set(key, id)
+          acc.push(0, 0, 0)
+        }
+        ids[v] = id
+        acc[id * 3] += b.x
+        acc[id * 3 + 1] += b.y
+        acc[id * 3 + 2] += b.z
+        face[v * 3] = b.x / len
+        face[v * 3 + 1] = b.y / len
+        face[v * 3 + 2] = b.z / len
+      }
+    }
+  }
+  for (let v = 0; v < pos.count; v++) {
+    const id = ids[v]
+    if (id < 0) continue
+    a.set(acc[id * 3], acc[id * 3 + 1], acc[id * 3 + 2]).normalize()
+    b.set(face[v * 3], face[v * 3 + 1], face[v * 3 + 2])
+    if (a.dot(b) >= cosC) nrm.setXYZ(v, a.x, a.y, a.z)
+    else nrm.setXYZ(v, b.x, b.y, b.z)
+  }
+  nrm.needsUpdate = true
 }
 
 /** Rounded-rectangle glass slab, w x h, centred, facing +z. */
