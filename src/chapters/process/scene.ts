@@ -225,10 +225,12 @@ export interface Film {
  */
 export function makeFilm(sdf: PatternSdf, keep: 1 | -1, margin: number): Film {
   const mat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color('#0b0c0e'),
-    roughness: 0.34,
+    // satin vinyl: a touch above the room's black and glossy enough to catch
+    // the studio strips as it is laid (a flat black would read as a hole)
+    color: new THREE.Color('#141619'),
+    roughness: 0.24,
     metalness: 0,
-    envMapIntensity: 0.9,
+    envMapIntensity: 1.5,
     transparent: true,
     side: THREE.DoubleSide,
   })

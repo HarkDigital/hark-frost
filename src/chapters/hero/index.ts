@@ -20,8 +20,8 @@ import './hero.css'
  *   0.10–0.56  MACRO   the camera travels in close: along the polished bevel,
  *                      across the sandblasted face (the backlight drifts
  *                      behind it, so the frost gradient shifts), then a clear
- *                      THAW window glides over the face and shows the hidden
- *                      hairline rings in the light (sound — Hark means listen).
+ *                      THAW window glides over the face: clear glass, the
+ *                      light and a hairline slit sharp behind it.
  *   0.56–0.93  PAYOFF  pull back; the mark settles right of centre (upper
  *                      half on portrait), front-on-ish; tagline + CTAs.
  *   0.93–1.00  OUT     the camera drifts into the frosted face as the breath
@@ -355,8 +355,9 @@ export default function create(): Chapter {
       s.cardK.trans.glow = 0.75 * rLight
       s.cardK.trans.slit = 3.2 * rLight * rSlit
       s.cardK.trans.width = 0.032
-      // the hidden rings are only drawn while a thaw can show them (else they'd just brighten the frost)
-      s.cardK.trans.rings = rLight * thawK
+      // no rings: the polished bevels bend hairline rings into dashed 'tread' across
+      // the macro shots; the thaw shows the clean light (and a slit) instead
+      s.cardK.trans.rings = 0
       s.cardK.main.glow = 0.035 * rLight * (1 - 0.5 * macro)
       s.cardK.main.slit = 0.32 * rSlit * (1 - outW)
       s.cardK.main.width = 0.003

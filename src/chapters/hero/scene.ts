@@ -15,9 +15,9 @@ import { rng } from '../../core/math'
  *                  BRIGHT into three's transmission buffer (what the frosted
  *                  glass sees and diffuses) and only faintly in the frame
  *                  itself, so the sandblasted faces glow luminous white-grey
- *                  like a backlit sign while the room stays black. Hairline
- *                  concentric rings (sound — Hark means listen) hide in the
- *                  light: frost blurs them into glow; a thaw reveals them.
+ *                  like a backlit sign while the room stays black. (The
+ *                  card can draw hairline rings, CardPass.rings, but they
+ *                  stay off: polished bevels bend them into dashes.)
  *   the floor      black, additive: a soft pool where the backlight spills,
  *                  so the world's halo reads as reflected in a black mirror.
  *   the reflection a flipped copy of the mark under the floor (cheap shader,

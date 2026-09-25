@@ -179,16 +179,17 @@ float frostNoise( vec2 p ) {
 		float openK = uThaw * ( 2.0 - uThaw );
 		vec2 q = abs( vFrostPos - uWin.xy ) - uWin.zw * openK;
 		float d = length( max( q, 0.0 ) ) + min( max( q.x, q.y ), 0.0 ) - uWinR * openK - 0.04 * ( 1.0 - openK );
-		float n = frostNoise( vFrostPos * 16.0 ) * 0.055 + frostNoise( vFrostPos * 55.0 ) * 0.02;
+		// a fine, shallow front: crystalline, never a torn smoky rim
+		float n = frostNoise( vFrostPos * 22.0 ) * 0.026 + frostNoise( vFrostPos * 70.0 ) * 0.008;
 		float e = d + n * uEdge;
 		float on = smoothstep( 0.0, 0.06, uThaw );
 		float clearM = 1.0 - smoothstep( -0.012, 0.012, e );
 		roughnessFactor = mix( roughness, uClear, clearM * on );
 		// the melting front: a pale rim of frost crystals catching the light
-		frostFront = ( smoothstep( -0.03, 0.0, e ) - smoothstep( 0.0, 0.035, e ) ) * on * uEdge;
+		frostFront = ( smoothstep( -0.014, 0.0, e ) - smoothstep( 0.0, 0.018, e ) ) * on * uEdge;
 	}`,
       )
-      .replace('#include <opaque_fragment>', 'outgoingLight += vec3( 0.075, 0.078, 0.085 ) * frostFront;\n\t#include <opaque_fragment>')
+      .replace('#include <opaque_fragment>', 'outgoingLight += vec3( 0.055, 0.057, 0.062 ) * frostFront;\n\t#include <opaque_fragment>')
     shader.fragmentShader = f
   }
   m.customProgramCacheKey = () => 'frost-window-thaw'
