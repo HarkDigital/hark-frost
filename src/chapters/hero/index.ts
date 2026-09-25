@@ -14,7 +14,7 @@ import '../chapter.css'
 export default function create(): Chapter {
   const group = new THREE.Group()
   const mark = placeholderMark()
-  mark.scale.setScalar(2.2)
+  mark.scale.setScalar(3.1)
   group.add(mark, placeholderFloor())
   let intro: HTMLElement
   let payoff: HTMLElement
@@ -44,7 +44,7 @@ export default function create(): Chapter {
     },
     update(local, frame) {
       const spin = ease.inOutCubic(segment(local, 0.1, 0.6))
-      mark.rotation.set(0.15 * Math.sin(frame.time * 0.6), spin * Math.PI * 2 + frame.time * 0.1, 0)
+      mark.rotation.set(0.08 * Math.sin(frame.time * 0.4), -0.35 + 0.25 * Math.sin(frame.time * 0.25) + spin * 0.6, 0)
       reveal(intro, 1 - smoothstep(0.08, 0.14, local))
       reveal(payoff, smoothstep(0.62, 0.7, local) * (1 - smoothstep(0.93, 0.97, local)))
       setRise(title, local > 0.64 && local < 0.95)

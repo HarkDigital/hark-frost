@@ -91,7 +91,8 @@ function simplify(pts: THREE.Vector2[], eps: number): THREE.Vector2[] {
   return pts.filter((_, i) => keep[i])
 }
 
-const SIMPLIFY_EPS = 0.0012
+// Frost renders the mark very large and razor sharp: a tighter tolerance (≈0.1 px at 1000 px tall)
+const SIMPLIFY_EPS = 0.0003
 
 /** Normalize shape groups in-place: center on (cx, cy), scale, flip y. */
 function normalize(groups: THREE.Shape[][], cx: number, cy: number, scale: number) {

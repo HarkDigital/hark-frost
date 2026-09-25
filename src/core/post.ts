@@ -6,20 +6,21 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 
 /*
- * Post-processing: Render → Sanitize (NaN guard) → Bloom → Output → FINAL.
+ * Post-processing for Hark Frost: Render → Sanitize (NaN guard) → Bloom →
+ * Output → FINAL.
  *
- * THEME: the FINAL pass is where a concept gets its signature look and its
- * chapter-cut transition. Previous concepts replaced it with:
- *   Orbit      glitch tear + zoom blur + white-green flash
- *   Resonance  pressure-wave ripple + paper wash
- *   Press      ink densities → rotated halftone screens (riso)
- *   Town       tilt-shift blur + miniature saturation + cloud wipe
- *   Arcade     pixelate + palette snap + Bayer dither + CRT + iris wipe
+ * FINAL is a clean, sharp finish for a black site: no chromatic aberration
+ * (the mark must stay razor sharp), a deep vignette, a fine grain and flash /
+ * fade, plus:
+ *  - FROST (params.frost 0..1): the whole frame behind frosted glass.
+ *  - THE BREATH CUT: approaching a chapter boundary, condensation forms on the
+ *    screen from its edges inward (a noise-edged frost front); at the boundary
+ *    the whole frame is fogged (hiding the swap); after it the fog clears from
+ *    the centre outward like breath evaporating off cold glass. uCutSide says
+ *    which half. A few tiny clear 'droplet' spots sparkle in the fog.
  *
- * This neutral version: soft radial wipe to `uCutColor` at cuts, gentle
- * chromatic aberration, vignette, grain, flash and fade. Keep the Post API
- * (params / resetParams / setSize / render / compileAsync / setFadeTone) and
- * the uTransition / uFade / uFlash / uGlitch uniforms — the engine drives them.
+ * Keep the Post API (params / resetParams / setSize / render / compileAsync /
+ * setFadeTone / cutSide) and the uTransition / uFade / uFlash / uGlitch uniforms.
  */
 
 const FinalShader = {
@@ -28,20 +29,17 @@ const FinalShader = {
     uTime: { value: 0 },
     uResolution: { value: new THREE.Vector2(1, 1) },
     uDpr: { value: 1 },
-    /** 0..1, peaks exactly at a chapter boundary (engine-driven) */
     uTransition: { value: 0 },
-    /** 0..1 wobble a chapter can add (THEME: glitch / heat shimmer / VHS …) */
+    uCutSide: { value: 1 },
     uGlitch: { value: 0 },
-    uAberration: { value: 0.0015 },
-    uGrain: { value: 0.03 },
-    uVignette: { value: 0.3 },
-    /** 0..1 wash to white */
+    uAberration: { value: 0 },
+    uGrain: { value: 0.018 },
+    uVignette: { value: 0.45 },
     uFlash: { value: 0 },
-    /** 0..1 fade to uFadeColor (reduced-motion cuts) */
     uFade: { value: 0 },
-    /** colour the cut wipes through (THEME) */
-    uCutColor: { value: new THREE.Color('#0d0f12') },
-    uFadeColor: { value: new THREE.Color('#0d0f12') },
+    uFrost: { value: 0 },
+    uFog: { value: new THREE.Color('#9aa2ad') },
+    uFadeColor: { value: new THREE.Color('#000000') },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -49,38 +47,76 @@ const FinalShader = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uTime, uDpr, uTransition, uGlitch, uAberration, uGrain, uVignette, uFlash, uFade;
+    uniform float uTime, uDpr, uTransition, uCutSide, uGlitch, uAberration, uGrain, uVignette, uFlash, uFade, uFrost;
     uniform vec2 uResolution;
-    uniform vec3 uCutColor, uFadeColor;
+    uniform vec3 uFog, uFadeColor;
     varying vec2 vUv;
 
     float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+    }
+    float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { v += a * noise(p); p = p * 2.07 + 5.3; a *= 0.5; } return v; }
+
+    vec3 frosted(vec2 uv, float radiusPx) {
+      vec2 px = 1.0 / uResolution;
+      float a0 = hash(gl_FragCoord.xy) * 6.2831853;
+      vec3 acc = vec3(0.0);
+      for (int i = 0; i < 14; i++) {
+        float fi = float(i);
+        float r = sqrt((fi + 0.5) / 14.0) * radiusPx;
+        float a = a0 + fi * 2.3999632;
+        acc += texture2D(tDiffuse, uv + vec2(cos(a), sin(a)) * r * px).rgb;
+      }
+      return acc / 14.0;
+    }
 
     void main() {
       vec2 uv = vUv;
-      float g = clamp(uGlitch, 0.0, 1.0);
-      uv.x += g * 0.004 * sin(uv.y * 60.0 + uTime * 12.0);
-
       vec2 c = uv - 0.5;
-      vec3 col;
-      col.r = texture2D(tDiffuse, uv + c * uAberration).r;
-      col.g = texture2D(tDiffuse, uv).g;
-      col.b = texture2D(tDiffuse, uv - c * uAberration).b;
+      float gl = clamp(uGlitch, 0.0, 1.0);
+      uv.x += gl * 0.003 * sin(uv.y * 60.0 + uTime * 8.0);
 
-      // THEME: the chapter-cut transition. Neutral: a soft radial wipe that
-      // closes toward the centre at the boundary (t = 1) and reopens after.
+      vec3 col;
+      if (uAberration > 0.00001) {
+        col.r = texture2D(tDiffuse, uv + c * uAberration).r;
+        col.g = texture2D(tDiffuse, uv).g;
+        col.b = texture2D(tDiffuse, uv - c * uAberration).b;
+      } else col = texture2D(tDiffuse, uv).rgb;
+
+      float fr = clamp(uFrost, 0.0, 1.0);
       float t = clamp(uTransition, 0.0, 1.0);
+      // ---- THE BREATH CUT: a noise-edged fog front
+      float fogMask = 0.0;
       if (t > 0.001) {
         float aspect = uResolution.x / max(uResolution.y, 1.0);
-        float r = length(c * vec2(aspect, 1.0));
-        float reach = (1.0 - t) * 1.1;
-        float wipe = 1.0 - smoothstep(reach - 0.12, reach, r);
-        col = mix(uCutColor, col, wipe);
+        vec2 pc = vec2(c.x * aspect, c.y);
+        float r = length(pc) / (0.5 * length(vec2(aspect, 1.0)));   // 0 centre … 1 corners
+        float n = fbm(pc * 3.2 + uTime * 0.05) - 0.5;
+        float e = t * t * (3.0 - 2.0 * t);
+        if (uCutSide < 0.0) fogMask = smoothstep(0.0, 0.08, (r + n * 0.35) - (1.05 - e * 1.25));   // forms from the edges inward
+        else fogMask = 1.0 - smoothstep(0.0, 0.08, (1.0 - e) * 1.25 - 0.1 - (r + n * 0.35));       // clears from the centre out
+        fogMask = max(fogMask, smoothstep(0.82, 1.0, t));
+      }
+      float frostK = max(fr, fogMask);
+      if (frostK > 0.002) {
+        vec3 f = frosted(uv, 30.0 * uDpr * max(fr, fogMask) * 1.2);
+        // condensation: lifted, pale, faintly granular
+        float grain = hash(floor(gl_FragCoord.xy / (1.6 * uDpr)));
+        vec3 fog = f * 0.8 + uFog * (0.07 + 0.05 * grain) * fogMask + 0.02 * fr;
+        // a few clear droplets sparkle in the fog
+        vec2 cell = floor(gl_FragCoord.xy / (22.0 * uDpr));
+        vec2 dp = fract(gl_FragCoord.xy / (22.0 * uDpr)) - 0.5;
+        float drop = step(0.93, hash(cell)) * (1.0 - smoothstep(0.08, 0.2, length(dp)));
+        fog = mix(fog, col * 1.05 + 0.05, drop * fogMask);
+        col = mix(col, fog, smoothstep(0.0, 0.3, frostK));
       }
 
       col = mix(col, vec3(1.0), clamp(uFlash, 0.0, 1.0));
-      float v = 1.0 - smoothstep(0.35, 1.05, length(c * vec2(1.0, 0.9)) * 1.4);
-      col *= mix(1.0, 0.55 + 0.45 * v, uVignette);
+      float v = 1.0 - smoothstep(0.3, 1.0, length(c * vec2(1.0, 0.9)) * 1.45);
+      col *= mix(1.0, 0.4 + 0.6 * v, uVignette);
       col += (hash(vUv * uResolution + fract(uTime * 7.13) * 91.0) - 0.5) * uGrain;
       col = mix(col, uFadeColor, clamp(uFade, 0.0, 1.0));
       gl_FragColor = vec4(col, 1.0);
@@ -103,20 +139,23 @@ export type PostParams = {
   /** white wash 0..1 */
   flash: number
   exposure: number
-  // THEME: add your look's params here (and damp them in render()).
+  /** whole-frame frosted glass 0..1 */
+  frost: number
 }
 
 /** Bloom only catches HDR (> ~1.0): emissive lamps, LEDs, speculars. */
 export const POST_DEFAULTS: PostParams = {
-  bloomStrength: 0.45,
+  // bloom only on true highlights (polished edges, the halo core): never smear the mark
+  bloomStrength: 0.35,
   bloomRadius: 0.4,
-  bloomThreshold: 1.0,
-  aberration: 0.0015,
-  grain: 0.03,
-  vignette: 0.3,
+  bloomThreshold: 1.05,
+  aberration: 0,
+  grain: 0.018,
+  vignette: 0.45,
   glitch: 0,
   flash: 0,
   exposure: 1,
+  frost: 0,
 }
 
 /**
@@ -151,6 +190,8 @@ export class Post {
   params: PostParams = { ...POST_DEFAULTS }
   private current: PostParams = { ...POST_DEFAULTS }
   transition = 0
+  /** -1 while approaching a chapter boundary, +1 after it (engine-driven) */
+  cutSide = 1
   fade = 0
   private lastFlashAt = -1e9
   private flashLive = false
@@ -178,9 +219,8 @@ export class Post {
     this.composer.addPass(this.final)
   }
 
-  /** THEME: colour the cut and reduced-motion fade pass through. */
+  /** Colour of the reduced-motion fade (black). */
   setCutColor(color: THREE.ColorRepresentation) {
-    ;(this.final.uniforms.uCutColor.value as THREE.Color).set(color)
     ;(this.final.uniforms.uFadeColor.value as THREE.Color).set(color)
   }
 
@@ -249,6 +289,8 @@ export class Post {
     u.uGrain.value = c.grain
     u.uVignette.value = c.vignette
     u.uFlash.value = c.flash
+    u.uFrost.value = c.frost
+    u.uCutSide.value = this.cutSide
     u.uFade.value = this.fade
     this.composer.render(dt)
   }

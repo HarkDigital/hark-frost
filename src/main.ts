@@ -1,6 +1,7 @@
-// THEME: fonts (@fontsource packages). Neutral defaults: Inter + JetBrains Mono.
-import '@fontsource-variable/inter'
-import '@fontsource-variable/jetbrains-mono'
+// Fonts: Schibsted Grotesk (display + body, incl. italics) and Fragment Mono (labels).
+import '@fontsource-variable/schibsted-grotesk'
+import '@fontsource-variable/schibsted-grotesk/wght-italic.css'
+import '@fontsource/fragment-mono/400.css'
 import './styles/base.css'
 import './ui/ui.css'
 
@@ -48,7 +49,8 @@ async function boot() {
     stages.id = 'stages'
     document.body.insertBefore(stages, document.getElementById('chrome'))
   }
-  if (!Engine.supported()) {
+  // ?read: "Read as a page" (the static copy, no WebGL)
+  if (params.has('read') || !Engine.supported()) {
     canvas.remove()
     document.getElementById('loader')?.remove()
     renderFallback(track)
