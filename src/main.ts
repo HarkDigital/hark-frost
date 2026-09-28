@@ -8,6 +8,7 @@ import './ui/ui.css'
 import { installPrintPolyfills } from './ui/polyfills'
 import { Engine } from './core/Engine'
 import { CHAPTERS } from './chapters/index'
+import { SERVICES } from './content'
 import { createLoader } from './ui/loader'
 import { createChrome } from './ui/chrome'
 import { Sound } from './ui/sound'
@@ -88,8 +89,13 @@ async function boot() {
   const p = params.get('p')
   const c = params.get('c')
   const hash = location.hash.slice(1)
+  // #services/<slug>: back from a service page, onto that service's plate
+  const svc = hash.match(/^services\/([a-z0-9-]+)$/)?.[1]
+  const svcAt = svc ? SERVICES.findIndex(s => s.slug === svc) : -1
+  const svcSlot = engine.slots.find(s => s.def.id === 'services')
   if (p) engine.goto(parseFloat(p))
   else if (c) engine.gotoChapter(c, parseFloat(params.get('l') ?? '0'))
+  else if (svcAt >= 0 && svcSlot) engine.land('services', false, svcSlot.chapter.anchors?.[svcAt])
   else if (hash && CHAPTERS.some(ch => ch.id === hash)) engine.land(hash, false)
   else engine.goto(0)
 

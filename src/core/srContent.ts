@@ -46,7 +46,7 @@ const COPY: Record<string, () => string> = {
     <p>${esc(SECTIONS.services.eyebrow)}.</p>
     <ol>${SERVICES.map(
       (s, i) =>
-        `<li><h3>${stop('services', i, s.title)}</h3><p>${esc(s.blurb)}</p><p>${s.tags.map(esc).join(' · ')}</p><p>${ext(serviceUrl(s.slug), `${SERVICE_CTA}: ${s.title}`, i)}</p></li>`,
+        `<li><h3>${stop('services', i, s.title)}</h3><p>${esc(s.blurb)}</p><p>${s.tags.map(esc).join(' · ')}</p><p><a href="${esc(serviceUrl(s.slug))}" data-anchor="${i}">${esc(`${SERVICE_CTA}: ${s.title}`)}</a></p></li>`,
     ).join('')}</ol>`,
 
   shield: () => `

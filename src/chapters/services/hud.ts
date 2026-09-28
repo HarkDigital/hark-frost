@@ -7,8 +7,8 @@ import { SECTIONS, SERVICE_CTA, SERVICES, serviceUrl } from '../../content'
  * ease-outs), so wherever the scroll rests the copy is settled and exact.
  *
  *   intro   eyebrow + "Eleven ways to be heard."
- *   card    frosted glass: NN / 11 · title · blurb · tags · the service's full
- *           page on the classic site ("Explore the service →") · 01–11 index
+ *   card    frosted glass: NN / 11 · title · blurb · tags · the service's own
+ *           page ("Explore the service →", src/service/*) · 01–11 index
  *
  * All eleven items share one grid cell, so the card never changes size.
  * metrics() reports the live layout so the camera frames the column into
@@ -74,8 +74,6 @@ export class Hud {
       for (const t of s.tags) el('li', 'hud-tag', t, tags)
       const more = el('a', 'hud-label et-more', undefined, root)
       more.href = serviceUrl(s.slug)
-      more.target = '_blank'
-      more.rel = 'noopener'
       el('span', '', SERVICE_CTA, more)
       el('span', 'et-more-arrow', '→', more).setAttribute('aria-hidden', 'true')
       this.items.push({ root, title })
