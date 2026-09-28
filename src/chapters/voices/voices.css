@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------------
-   Breath (voices) — the intro headline and the frosted quote panel.
-   Black space, one frosted card; the names live in the fog (WebGL).
-   Every selector is scoped under .stage-voices.
+   Edge-lit (voices) — the intro headline and the frosted quote panel.
+   Black space, one frosted card; the names are engraved in the glass
+   plaques (WebGL). Every selector is scoped under .stage-voices.
    ------------------------------------------------------------------ */
 
 .stage-voices .vc-intro {
@@ -168,7 +168,7 @@
   transition-delay: calc(0.5s + var(--i, 0) * 30ms);
 }
 
-/* ---------------- portrait: the pane above, the panel below ---------------- */
+/* ---------------- portrait: the plaque above, the panel below ---------------- */
 
 @media (max-aspect-ratio: 1/1) {
   .stage-voices .vc-title {

@@ -1,34 +1,36 @@
 import * as THREE from 'three'
 import type { CameraPose, Chapter, ChapterContext, Frame } from '../../core/types'
 import { el, rise, setRise } from '../../core/dom'
-import { clamp, lerp, rng, smoothstep } from '../../core/math'
+import { clamp, lerp, smoothstep } from '../../core/math'
 import { nextFrame } from '../../core/yield'
 import { SECTIONS, TESTIMONIALS } from '../../content'
-import { makePane, PH, PW, REGION, type Pane } from './breath'
-import { buildMaskIdle, hasMask, nameMask, preloadScriptFonts, scriptFontsReady, resetMasks } from './script'
-import { whenRevealed } from '../../kit/images'
+import { buildEngravings, engraveFontsReady, loadEngraveFonts } from './engrave'
+import { BASE_D, BASE_W, GLASS_Y1, PH, PW, SLOT_V, buildRow, rowPos, type Row } from './plaques'
 import './voices.css'
 
-// the hand starts downloading while the chapters before this one initialise
-void preloadScriptFonts()
+// the faces start loading while the chapters before this one initialise
+void loadEngraveFonts()
 
 /*
- * BREATH (voices) — one large sheet of cold glass in the black room, fogged
- * with condensation and lit from behind. For each client, a fingertip writes
- * their NAME into the fog (and the company, smaller), stroke by stroke with
- * the scroll: the backlight shines through the clear strokes, a drip or two
- * runs from the baseline, then the fog re-forms for the next voice. The quote
- * itself is DOM, in a frosted panel.
+ * EDGE-LIT (voices) — a row of thick, clear glass plaques standing on slim
+ * dark bases over the black mirror floor, like crystal client awards. Each
+ * carries one client's NAME, COMPANY and a large opening quotation mark,
+ * sandblasted into the glass. A light strip in each base shines up into the
+ * glass: the clear glass stays almost invisible (only its polished edges catch
+ * the studio), the etched strokes catch the light and glow, brightest near the
+ * base. The quote itself is DOM, verbatim, in a frosted panel.
  *
- *   0.00–0.09  intro: condensation blooms across the clear pane (a breath);
- *              “We listen. They talk.” — and the finger has already begun
- *              the first name (it starts at V0, so the landing finds it
- *              half-written)
- *   0.09–0.93  eight voices (0.105 each): write the name → the company →
- *              hold (drips run, the light sweeps along the edges) → re-fog
- *   0.93–1.00  the whole pane fogs over, heavy and white, for the cut
+ *   0.00–0.09  intro: the row powers up out of the cut (standby lines come on
+ *              along the bases, near to far); “We listen. They talk.” over the
+ *              row receding into black (settled 0.06 & 0.08)
+ *   0.09–0.93  eight voices (0.105 each): the camera glides along the row to
+ *              the next plaque → its base light fades up, the etching ignites
+ *              from the base upward → hold (the quote) → it dims as the camera
+ *              moves on
+ *   0.93–1.00  the last plaque stays lit, the whole row returns to standby,
+ *              the camera eases back for the cut
  *
- * Everything is derived from `local`; frame.time only drives idle float.
+ * Everything is derived from `local`; frame.time only drives idle drift.
  */
 
 const N = TESTIMONIALS.length
@@ -36,48 +38,50 @@ const B0 = 0.09
 const B1 = 0.93
 const SPAN = (B1 - B0) / N
 const HYST = 0.005
-/** the first voice's writing begins in the intro */
-const V0 = 0.043
-/** inside a voice (phase 0..1) */
-const WRITE_A = 0.025
-const WRITE_B = 0.47
-const CO_A = 0.44
-const CO_B = 0.62
-const REFOG_A = 0.88
-const REFOG_B = 0.995
-/** drip trail half-width where it leaves the stroke (world units) */
-const DRIP_W = 0.026
+/** the camera leaves a plaque at this phase of its beat, and arrives at the next one's */
+const GLIDE_A = 0.8
+const GLIDE_B = 0.14
+/** inside a voice (phase 0..1): ignition / dim */
+const IGN_A = 0.07
+const IGN_B = 0.17
+const FRONT_A = 0.1
+const FRONT_B = 0.3
+const DIM_A = 0.86
+const DIM_B = 1.0
+/** the intro shot hands over to the first plaque across [INTRO_GO, first arrival] */
+const INTRO_GO = 0.077
 
-
-/** writing pace: a little slower into and out of the stroke, steady between */
-const pace = (t: number) => {
-  const x = clamp(t)
-  return 0.55 * x + 0.45 * x * x * (3 - 2 * x)
-}
-const easeOut = (t: number) => 1 - Math.pow(1 - clamp(t), 3)
 const easeInOut = (t: number) => {
   const x = clamp(t)
   return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2
+}
+const easeOut = (t: number) => 1 - Math.pow(1 - clamp(t), 3)
+/** 0 → 1 → 0 over x ∈ [-1, 1] */
+const bump = (x: number) => {
+  const a = clamp(1 - x * x)
+  return a * a
 }
 
 interface Layout {
   w: number
   h: number
   portrait: boolean
-  /** px rects (x0, y0, x1, y1) for the pane: while the quotes show / in the intro */
+  /** px rects (x0, y0, x1, y1) for the plaque: while the quotes show / in the intro */
   beat: [number, number, number, number]
   intro: [number, number, number, number]
 }
 
+/** continuous plaque index the camera is at (holds mid-beat, glides across the boundaries) */
+function camIndex(local: number) {
+  const u = (local - B0) / SPAN
+  let f = 0
+  for (let k = 1; k < N; k++) f += easeInOut((u - (k - 1 + GLIDE_A)) / (1 - GLIDE_A + GLIDE_B))
+  return f
+}
+
 export default function create(): Chapter {
   const group = new THREE.Group()
-  let pane: Pane
-  const cam = new THREE.Vector3()
-  const tmp = new THREE.Vector3()
-
-  // per-voice drip lengths (stable)
-  const rand = rng(29)
-  const dripLen = TESTIMONIALS.map(() => [0.42 + rand() * 0.4, 0.3 + rand() * 0.38])
+  let row: Row
 
   // DOM
   let intro: HTMLElement
@@ -92,12 +96,6 @@ export default function create(): Chapter {
   let deferShow = 0
   const lay: Layout = { w: 0, h: 0, portrait: false, beat: [0, 0, 1, 1], intro: [0, 0, 1, 1] }
   let measured = false
-  let currentMask = -1
-  /** the engine has entered this chapter (prewarm updates it without entering) */
-  let entered = false
-  let dripU: THREE.Vector4[] = []
-  /** textures from a fallback-font build, disposed once rebound */
-  let stale: THREE.Texture[] = []
 
   /* -------------------------------------------------------------- DOM */
 
@@ -139,7 +137,7 @@ export default function create(): Chapter {
     measure()
   }
 
-  /** where the pane may sit (px), read only on resize / content size changes */
+  /** where the plaque may sit (px), read only on resize / content size changes */
   function measure(fw?: number, fh?: number) {
     const w = fw ?? window.innerWidth
     const h = fh ?? window.innerHeight
@@ -159,15 +157,15 @@ export default function create(): Chapter {
     const introBottom = intro.offsetTop + intro.offsetHeight
     if (portrait) {
       const gut = Math.max(12, panel.offsetLeft || 16)
-      const top = safeTop + 6
-      const bottom = panelBottom - panelH - 18
+      const top = safeTop + 4
+      const bottom = panelBottom - panelH - 14
       lay.beat = [gut * 0.5, top, w - gut * 0.5, Math.max(top + 120, bottom)]
-      lay.intro = [gut * 0.5, introBottom + 22, w - gut * 0.5, Math.max(introBottom + 140, h - safeBottom - 10)]
+      lay.intro = [gut * 0.5, introBottom + 18, w - gut * 0.5, Math.max(introBottom + 160, h - safeBottom - 6)]
     } else {
       const right = panel.offsetLeft + (panel.offsetWidth || 0.36 * w)
       const x0 = right + Math.max(24, 0.025 * w)
       const x1 = w - Math.max(24, 0.03 * w)
-      lay.beat = [x0, safeTop - 10, x1, h - safeBottom + 10]
+      lay.beat = [x0, safeTop - 16, x1, h - safeBottom + 16]
       lay.intro = lay.beat
     }
     lay.w = w
@@ -235,191 +233,252 @@ export default function create(): Chapter {
     }
   }
 
-  /* ---------------------------------------------------------- timeline */
+  /* ---------------------------------------------------------- lighting */
 
-  /** which voice's writing is on the glass, and where it is in its beat */
-  function voiceAt(local: number) {
-    // the first voice runs from V0 (in the intro) to the end of its slot
-    if (local < B0 + SPAN) return { i: 0, p: clamp((local - V0) / (B0 + SPAN - V0)), active: local >= V0 }
-    const i = Math.min(N - 1, Math.max(0, Math.floor((local - B0) / SPAN)))
-    const p = local < B0 ? 0 : local >= B1 ? 1 : clamp((local - B0 - i * SPAN) / SPAN)
-    return { i, p, active: local >= B0 && local < B1 }
+  /** how lit plaque i is at `local` (0..1), how far its light has climbed, and its strip level */
+  function lightAt(i: number, local: number, rm: boolean) {
+    const p = (local - B0) / SPAN - i
+    let on = smoothstep(IGN_A, IGN_B, p)
+    let front = rm ? 1.2 : lerp(0, 1.2, easeOut((p - FRONT_A) / (FRONT_B - FRONT_A)))
+    // the last plaque stays lit through the out beat
+    const off = i === N - 1 ? 0.25 * smoothstep(0.97, 1, local) : smoothstep(DIM_A, DIM_B, p)
+    on *= 1 - off
+    if (p >= DIM_A && i < N - 1) front = 1.2
+    // one soft stutter as the strip catches (never in reduced motion)
+    const stutter = rm ? 0 : 0.45 * bump((p - 0.118) / 0.022)
+    return { on, front, strip: on * (1 - stutter) }
   }
 
   /* ------------------------------------------------------------ camera */
 
   const FOV_L = 30
-  const FOV_P = 38
+  const FOV_P = 36
+  /** the viewing direction: a little to the right of the plaques' normal, looking slightly down */
+  const YAW = 0.2
+  const PITCH = 0.085
+  /** the intro looks down the row from its near end */
+  const INTRO_YAW = 0.16
+  /** subject box (the plaque on its base, a hint of reflection below) */
+  const SUBJ_H = GLASS_Y1 + 0.22
+  const SUBJ_W = BASE_W
+  const SUBJ_CY = GLASS_Y1 / 2 - 0.1
 
-  /** camera that frames the pane (at the origin) centred in rect r, fill 0..1 */
-  function frameRect(r: [number, number, number, number], f: Frame, fill: number, outPos: THREE.Vector3, outTgt: THREE.Vector3) {
-    const W = f.width
-    const H = f.height
-    const aspect = W / Math.max(1, H)
-    const fov = lay.portrait ? FOV_P : FOV_L
-    const tanV = Math.tan(THREE.MathUtils.degToRad(fov / 2))
-    const rw = Math.max(80, r[2] - r[0])
-    const rh = Math.max(80, r[3] - r[1])
-    const paneWpx = Math.min(rw * fill, rh * fill * (PW / PH))
-    const D = (PW * H) / (2 * tanV * paneWpx)
-    const cx = ((r[0] + r[2]) / 2 / W) * 2 - 1
-    const cy = 1 - ((r[1] + r[3]) / 2 / H) * 2
-    const ox = -cx * D * tanV * aspect
-    const oy = -cy * D * tanV
-    outPos.set(ox, oy, D)
-    outTgt.set(ox, oy, 0)
-    return fov
-  }
-
+  const fwd = new THREE.Vector3()
+  const right = new THREE.Vector3()
+  const up = new THREE.Vector3()
+  const C = new THREE.Vector3()
+  const tmp = new THREE.Vector3()
+  const pose = { pos: new THREE.Vector3(0, 1, 8), target: new THREE.Vector3(0, 1, 0), fov: FOV_L }
   const pA = new THREE.Vector3()
   const tA = new THREE.Vector3()
   const pB = new THREE.Vector3()
   const tB = new THREE.Vector3()
-  const introPos = new THREE.Vector3()
-  const introTgt = new THREE.Vector3()
+  const probe = new THREE.PerspectiveCamera()
+
+  /**
+   * Place a camera looking along (yaw, pitch) so the subject centred at `c`
+   * (size sw x sh) fills `fill` of rect r and sits at the rect's centre.
+   */
+  function frame3(
+    r: [number, number, number, number],
+    W: number,
+    H: number,
+    fov: number,
+    c: THREE.Vector3,
+    sw: number,
+    sh: number,
+    fill: number,
+    yaw: number,
+    pitch: number,
+    k: number,
+    outPos: THREE.Vector3,
+    outTgt: THREE.Vector3,
+  ) {
+    const aspect = W / Math.max(1, H)
+    const tanV = Math.tan(THREE.MathUtils.degToRad(fov / 2))
+    const tanH = tanV * aspect
+    const rw = Math.max(80, r[2] - r[0])
+    const rh = Math.max(80, r[3] - r[1])
+    const D = Math.max(sh / 2 / (tanV * fill * (rh / H)), sw / 2 / (tanH * fill * (rw / W))) * k
+    const cx = ((r[0] + r[2]) / W) - 1
+    const cy = 1 - ((r[1] + r[3]) / H)
+    fwd.set(-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch))
+    right.set(Math.cos(yaw), 0, -Math.sin(yaw))
+    up.crossVectors(right, fwd)
+    outPos
+      .copy(c)
+      .addScaledVector(fwd, -D)
+      .addScaledVector(right, -cx * tanH * D)
+      .addScaledVector(up, -cy * tanV * D)
+    outTgt.copy(outPos).addScaledVector(fwd, D)
+  }
+
+  function computePose(local: number, frame: Frame) {
+    if (!measured || lay.w !== frame.width || lay.h !== frame.height) measure(frame.width, frame.height)
+    const W = frame.width
+    const H = frame.height
+    const rm = frame.reducedMotion || !!frame.still
+    const fov = lay.portrait ? FOV_P : FOV_L
+    const f = camIndex(local)
+    const fill = lay.portrait ? 0.94 : 0.9
+    // the plaque in view; a slow push-in while it holds
+    const u = (local - B0) / SPAN
+    const p = u - Math.round(clamp(u - 0.5, 0, N - 1))
+    const push = local >= B0 && local < B1 ? 0.035 * Math.sin(Math.PI * clamp(p)) : 0
+    // a touch of swing while gliding (the camera leans into the move)
+    const swing = Math.sin(Math.PI * (f - Math.floor(f))) * 0.06
+    rowPos(f, C).y += SUBJ_CY
+    frame3(lay.beat, W, H, fov, C, SUBJ_W, SUBJ_H, fill, YAW + swing, PITCH, 1 - push, pB, tB)
+
+    // intro: further back, looking down the row from its first plaque
+    // (portrait is narrow: fewer plaques, larger)
+    rowPos(lay.portrait ? 0.5 : 1.8, C).y += SUBJ_CY + 0.1
+    const drift = easeOut(local / INTRO_GO)
+    const introFill = lay.portrait ? 0.98 : 0.94
+    frame3(lay.intro, W, H, fov, C, SUBJ_W * (lay.portrait ? 2.5 : 3.4), SUBJ_H * 1.25, introFill, INTRO_YAW, PITCH + 0.07, lerp(1.1, 1, drift), pA, tA)
+    const go = easeInOut((local - INTRO_GO) / (B0 + GLIDE_B * SPAN - INTRO_GO))
+    pose.pos.lerpVectors(pA, pB, go)
+    pose.target.lerpVectors(tA, tB, go)
+
+    // out beat: ease back and up a little for the cut
+    const out = easeInOut((local - B1) / (1 - B1))
+    if (out > 0) {
+      tmp.copy(pose.pos).sub(pose.target).multiplyScalar(0.14 * out)
+      pose.pos.add(tmp)
+      pose.pos.y += 0.25 * out
+    }
+    if (!rm) {
+      pose.pos.x += Math.sin(frame.time * 0.17) * 0.025
+      pose.pos.y += Math.sin(frame.time * 0.23) * 0.018
+    }
+    pose.fov = fov
+    return f
+  }
 
   /* ----------------------------------------------------------- chapter */
 
   return {
     id: 'voices',
     group,
-    // keyboard stops land on each voice once the name is written and the quote is sharp
-    anchors: TESTIMONIALS.map((_, i) => B0 + SPAN * (i + 0.7)),
+    // keyboard stops land on each voice once its plaque is lit and the quote is sharp
+    anchors: TESTIMONIALS.map((_, i) => B0 + SPAN * (i + 0.55)),
 
     async init(ctx: ChapterContext) {
       buildDom(ctx.stage)
-      pane = makePane(ctx.mobile)
-      dripU = [pane.u.uDrip0.value, pane.u.uDrip1.value]
-      group.add(pane.root)
-      await nextFrame()
-      const fontsOk = await scriptFontsReady(2500)
-      // the first voice now (the landing shows it half-written); the rest
-      // after the reveal, a phase per frame, so they never hold up the boot.
-      // A jump that lands on a voice first builds that one on the spot.
-      await buildMaskIdle(0)
-      whenRevealed().then(async () => {
-        if (!fontsOk && (await scriptFontsReady(15000))) {
-          // the hand arrived late: redo the fallback build
-          stale = resetMasks()
-          currentMask = -1
-        }
-        for (let i = 0; i < N; i++) await buildMaskIdle(i)
-      })
+      const fontsOk = await engraveFontsReady(2500)
+      const cw = ctx.mobile ? 640 : 768
+      const engr = buildEngravings(TESTIMONIALS, { w: cw, h: Math.round((cw * PH) / PW), slotV: SLOT_V })
+      for (const it of engr.items) {
+        it.redraw()
+        await nextFrame()
+      }
+      row = buildRow(N, engr.items.map(it => it.tex), ctx.world.envMap, ctx.mobile)
+      group.add(row.root)
+      // the faces arrived late: engrave again with the real type, a plaque a frame
+      if (!fontsOk)
+        void loadEngraveFonts().then(async ok => {
+          if (!ok) return
+          engr.remeasure()
+          for (const it of engr.items) {
+            it.redraw()
+            await nextFrame()
+          }
+        })
     },
 
     onEnter() {
-      entered = true
       sinkAll()
       deferShow = 1
       if (!measured) measure()
     },
 
     onLeave() {
-      entered = false
       sinkAll()
     },
 
     update(local, frame, ctx) {
-      const rm = frame.reducedMotion || !!frame.still
-      const u = pane.u
-      const v = voiceAt(local)
-      const p = v.p
+      // reduced motion (or Motion off): the etching fades up evenly, no stutter
+      const calm = frame.reducedMotion || !!frame.still
+      const f = computePose(local, frame)
 
-      /* ---- the writing ---- */
-      // (the boot prewarm updates without entering: it compiles with any built
-      // mask rather than building one on the spot)
-      const mi = entered || hasMask(v.i) ? v.i : hasMask(currentMask) ? currentMask : 0
-      if (mi !== currentMask) {
-        const m = nameMask(mi)
-        currentMask = mi
-        u.uMask.value = m.tex
-        u.uCapN.value = m.capName
-        u.uCapC.value = m.capCo
-        u.uHasMask.value = 1
-        dripU.forEach((d, k) => {
-          const s = m.drips[k]
-          if (!s) d.set(0, 0, 0, DRIP_W)
-          else d.set(REGION.x + (s.u - 0.5) * REGION.w, REGION.y + (s.v - 0.5) * REGION.h, 0, DRIP_W)
-        })
-        if (stale.length) {
-          for (const t of stale) t.dispose()
-          stale = []
+      /* ---- the row ---- */
+      // standby: the base lines come on along the row out of the cut (near to far), and again at the end
+      const outK = smoothstep(B1, 0.985, local)
+      let peak = 0
+      let peakI = 0
+      for (const q of row.plaques) {
+        const i = q.index
+        const d = Math.abs(i - f)
+        // far plaques fade into the dark; very far ones aren't drawn
+        // the plaques already heard step back into the dark faster than the ones to come
+        const vis = (1 - 0.8 * smoothstep(1.2, 4.5, d)) * (1 - 0.85 * smoothstep(0.25, 1.1, f - i))
+        q.root.visible = d < 5.5
+        const L = lightAt(i, local, calm)
+        const wake = smoothstep(0.012 + i * 0.006, 0.032 + i * 0.006, local)
+        const standby = (lerp(0.55, 0.3, smoothstep(B0 - 0.01, B0 + 0.02, local)) * wake + 0.4 * outK) * vis
+        if (L.on > peak) {
+          peak = L.on
+          peakI = i
         }
+        const eu = q.etch.uniforms
+        eu.uLit.value = L.on
+        eu.uFront.value = L.front
+        eu.uAmb.value = (0.016 + 0.024 * standby) * vis
+        const gu = q.edge.uniforms
+        gu.uLit.value = L.on
+        gu.uFront.value = L.front
+        gu.uAmb.value = 0.05 * vis
+        q.mEtch.uniforms.uLit.value = L.on
+        q.mEtch.uniforms.uFront.value = L.front
+        q.mEtch.uniforms.uAmb.value = eu.uAmb.value
+        q.mEdge.uniforms.uLit.value = L.on
+        q.mEdge.uniforms.uFront.value = L.front
+        q.mEdge.uniforms.uAmb.value = gu.uAmb.value
+        q.strip.uniforms.uStrip.value = 0.4 * standby + 1.05 * L.strip
+        q.caps.envMapIntensity = 0.3 * vis
+        q.sides.envMapIntensity = 1.9 * vis
+        q.base.envMapIntensity = 1.1 * vis
+        // the floor catches a little of each plaque's light
+        rowPos(i, tmp)
+        row.pools[i].set(tmp.x, tmp.z + BASE_D * 0.2, 0.05 * standby + 0.14 * L.on, 0)
       }
-      const m = nameMask(mi)
-      const write = v.active ? pace((p - WRITE_A) / (WRITE_B - WRITE_A)) : local >= B1 ? 1 : 0
-      const coWrite = v.active ? pace((p - CO_A) / (CO_B - CO_A)) : local >= B1 ? 1 : 0
-      const refog = v.active ? pace((p - REFOG_A) / (REFOG_B - REFOG_A)) : local >= B1 ? 1 : 0
-      u.uWrite.value = write
-      u.uCoWrite.value = coWrite
-      u.uRefog.value = refog
-      // drips start once the finger has passed their glyph, and run until the fog returns
-      dripU.forEach((d, k) => {
-        const s = m.drips[k]
-        if (!s) {
-          d.z = 0
-          return
-        }
-        const start = WRITE_A + s.t * (WRITE_B - WRITE_A) + 0.06 + k * 0.05
-        const run = clamp((p - start) / (REFOG_A + 0.08 - start))
-        d.z = v.active ? Math.min(dripLen[v.i][k], s.max * REGION.h) * easeOut(run) * (0.35 + 0.65 * run) : 0
-      })
 
-      /* ---- the breath: condensation blooms over the clear pane ---- */
-      const bloom = easeOut(clamp((local - 0.008) / 0.06))
-      u.uBloom.value = lerp(0.2, 5.4, bloom)
-      // between voices a fresh breath thickens the fog for a moment
-      let breath = 0
-      for (let k = 1; k < N; k++) {
-        const d = (local - (B0 + k * SPAN)) / (SPAN * 0.16)
-        breath = Math.max(breath, Math.exp(-d * d))
+      // the studio's strips slide along the polished edges as the camera glides
+      const envTurn = 1.2 + f * 0.32 + (frame.reducedMotion || frame.still ? 0 : Math.sin(frame.time * 0.13) * 0.04)
+      for (const q of row.plaques) {
+        q.caps.envMapRotation.y = envTurn
+        q.sides.envMapRotation.y = envTurn
+        q.base.envMapRotation.y = envTurn
       }
-      const out = smoothstep(B1, 0.99, local)
-      u.uHeavy.value = Math.max(out, (rm ? 0.08 : 0.2) * breath)
-
-      /* ---- the light behind ---- */
-      const written = v.active ? smoothstep(WRITE_A, WRITE_B, p) * (1 - smoothstep(REFOG_A, REFOG_B, p)) : 0
-      const idle = rm ? 0 : Math.sin(frame.time * 0.5) * 0.015
-      u.uLight.value = (0.9 + 0.12 * written + idle) * lerp(1, 0.78, out)
-      // a crisp light sweep across the glass while the name is on it
-      const sweepT = clamp((p - 0.1) / 0.72)
-      u.uSweep.value = v.active ? lerp(-4.2, 4.6, sweepT) : -9
-      u.uSweepK.value = v.active ? Math.sin(Math.PI * sweepT) : 0
-
-      /* ---- the pane: a slow turntable ---- */
-      const drift = local < B0 ? 0 : clamp((local - B0) / (B1 - B0))
-      const yaw = lay.portrait ? lerp(-0.12, 0.1, drift) : lerp(-0.2, 0.06, drift)
-      pane.root.rotation.set(-0.02, yaw + (rm ? 0 : Math.sin(frame.time * 0.21) * 0.008), 0)
-      pane.root.position.y = rm ? 0 : Math.sin(frame.time * 0.33) * 0.02
-      pane.root.updateMatrixWorld()
-      cam.copy(ctx.camera.position)
-      pane.face.worldToLocal(cam)
-      u.uCam.value.copy(cam)
 
       /* ---- world + post ---- */
       const w = ctx.world.params
-      w.top = '#010102'
+      w.top = '#020203'
       w.bottom = '#000000'
-      // the halo stands behind the pane: a faint aura around its edges
-      tmp.set(0, REGION.y, 0).applyMatrix4(pane.root.matrixWorld).project(ctx.camera)
-      const aspect = frame.width / Math.max(1, frame.height)
-      if (Number.isFinite(tmp.x) && Number.isFinite(tmp.y)) w.focus.set(tmp.x * aspect, tmp.y)
-      w.halo = (lay.portrait ? 0.22 : 0.32) * (1 + 0.3 * written) * lerp(1, 0.7, out)
-      w.haloSize = lay.portrait ? 0.95 : 1.2
+      // a faint backlight behind the lit plaque, so it stands off the black
+      rowPos(peakI, tmp).y += GLASS_Y1 * 0.55
+      probe.fov = pose.fov
+      probe.aspect = frame.width / Math.max(1, frame.height)
+      probe.updateProjectionMatrix()
+      probe.position.copy(pose.pos)
+      probe.lookAt(pose.target)
+      probe.updateMatrixWorld()
+      tmp.project(probe)
+      if (Number.isFinite(tmp.x + tmp.y)) w.focus.set(tmp.x * probe.aspect, tmp.y)
+      w.halo = (lay.portrait ? 0.05 : 0.07) * (0.4 + 0.6 * peak)
+      w.haloSize = 1.1
       w.haloColor = '#e6eeff'
       w.slits = 0
-      w.env = 1.1
-      // light glides along the polished edges, one slow pass per voice
-      w.envTurn = 0.6 + (v.active ? v.i + easeInOut(p) : local >= B1 ? N : 0) * 0.62
-      w.key = 1.3
-      w.keyDir.set(-0.4, 0.8, 0.45)
-      w.fill = 0.04
+      w.env = 1
+      w.envTurn = envTurn
+      w.key = 0
+      w.fill = 0.03
       const post = ctx.post.params
-      post.vignette = 0.62
-      // no bloom: nothing here but the sweep's hairline crosses the threshold
-      // (≈0.2% of pixels); the fog shader draws its soft glint itself
+      post.vignette = 0.6
+      // no bloom: the slot's glow is drawn in its shader (bloom beads a line this
+      // thin and slanted), and the etching's halo comes from its frost (G)
       post.bloomStrength = 0
-      post.bloomRadius = 0.35
+      post.bloomRadius = 0.3
       post.grain = 0.02
 
       /* ---- DOM ---- */
@@ -432,35 +491,12 @@ export default function create(): Chapter {
       intro.classList.toggle('is-on', shown === -1)
     },
 
-    camera(local: number, frame: Frame, out: CameraPose) {
-      if (!measured || lay.w !== frame.width || lay.h !== frame.height) measure(frame.width, frame.height)
-      const rm = frame.reducedMotion || !!frame.still
-      const v = voiceAt(local)
-      const fill = lay.portrait ? 1.04 : 0.92
-      const fov = frameRect(lay.beat, frame, fill, pB, tB)
-      // intro: from a closer look along the upper-left edge back to the framed pane
-      frameRect(lay.intro, frame, fill, pA, tA)
-      const settle = easeInOut(clamp(local / 0.075))
-      introPos.copy(pA).sub(tA).multiplyScalar(0.55).add(tA).add(tmp.set(-PW * 0.2, PH * 0.14, 0))
-      introTgt.copy(tA).add(tmp.set(-PW * 0.24, PH * 0.12, 0))
-      introPos.lerp(pA, settle)
-      introTgt.lerp(tA, settle)
-      // intro → the first voice's framing (portrait moves up under the chrome)
-      const toBeat = easeInOut(clamp((local - (B0 - 0.012)) / 0.05))
-      out.position.lerpVectors(introPos, pB, toBeat)
-      out.target.lerpVectors(introTgt, tB, toBeat)
-      // a slow push-in while each name is on the glass, easing back as it fogs
-      const push = v.active ? Math.sin(Math.PI * clamp(v.p)) * 0.045 : 0
-      const outBeat = smoothstep(B1, 1, local)
-      const k = 1 - push + outBeat * 0.08
-      out.position.sub(out.target).multiplyScalar(k).add(out.target)
-      if (!rm) {
-        out.position.x += Math.sin(frame.time * 0.17) * 0.03
-        out.position.y += Math.sin(frame.time * 0.23) * 0.02
-      }
-      out.fov = fov
+    camera(_local: number, frame: Frame, out: CameraPose) {
+      out.position.copy(pose.pos)
+      out.target.copy(pose.target)
+      out.fov = pose.fov
       out.roll = 0
-      out.parallax = rm ? 0 : 0.22
+      out.parallax = frame.reducedMotion || frame.still || frame.mobile ? 0 : 0.14
     },
   }
 }
