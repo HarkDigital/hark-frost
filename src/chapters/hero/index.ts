@@ -21,9 +21,8 @@ import './hero.css'
  *                      plain fade under reduced motion) and wash the frost
  *                      with cyan and violet.
  *   0.10–0.56  MACRO   the camera travels in close: along the frosted bevel,
- *                      across the sandblasted face (the backlight drifts
- *                      behind it, so the frost gradient shifts; the grain
- *                      reads), then a clear THAW window glides over the face
+ *                      across the smooth frosted face (the backlight drifts
+ *                      behind it, so the frost gradient shifts), then a clear THAW window glides over the face
  *                      along a light strip behind the glass: razor sharp in
  *                      the window, a soft frosted bar outside it, a
  *                      crystalline melt front at its edge.
@@ -67,7 +66,7 @@ const ROT = 9
 const TILT = 10
 const NV = 11
 
-/** the macro captions' local windows: 01 frosted edge, 02 sandblasted face, 03 thaw */
+/** the macro captions' local windows: 01 frosted edge, 02 frosted face, 03 thaw */
 const BEATS: [number, number][] = [
   [0.14, 0.3],
   [0.31, 0.43],
@@ -253,7 +252,7 @@ export default function create(): Chapter {
       // macro captions: a watch-film detail index (decorative)
       const capWrap = el('div', 'hf-caps', undefined, ctx.stage)
       capWrap.setAttribute('aria-hidden', 'true')
-      ;['Frosted edge', 'Sandblasted face', 'Thaw'].forEach((txt, i) => {
+      ;['Frosted edge', 'Frosted face', 'Thaw'].forEach((txt, i) => {
         const c = el('p', 'hud-label hf-cap', undefined, capWrap)
         el('span', 'hf-cap-n', `0${i + 1}`, c)
         el('span', 'hf-cap-line', undefined, c)
@@ -374,10 +373,6 @@ export default function create(): Chapter {
       s.capsU.uThawR.value = 0.066
       s.capsU.uFront.value = 0.4
       s.caps.roughness = 0.46
-      // the sandblast grain reads close up (sub-pixel far away: the mips flatten it)
-      const gn = lerp(0.02, 0.06, macro)
-      s.caps.normalScale.set(gn, gn)
-      s.capsU.uGrain.value = lerp(0.05, 0.16, macro)
 
       // ---- the backlight card: camera-facing, behind the mark; it drifts in macro
       const camToMark = tmpC.copy(pos).negate().normalize() // the mark's centre is the origin

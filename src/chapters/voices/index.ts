@@ -14,11 +14,12 @@ void loadEngraveFonts()
 /*
  * EDGE-LIT (voices) — a row of thick, clear glass plaques standing on slim
  * dark bases over the black mirror floor, like crystal client awards. Each
- * carries one client's NAME, COMPANY and a large opening quotation mark,
- * sandblasted into the glass. A light strip in each base shines up into the
- * glass: the clear glass stays almost invisible (only its polished edges catch
- * the studio), the etched strokes catch the light and glow, brightest near the
- * base. The quote itself is DOM, verbatim, in a frosted panel.
+ * carries one client's QUOTE, verbatim, as its main text, with the client and
+ * company as a small credit beneath, sandblasted into the glass. A light
+ * strip in each base shines up into the glass: the clear glass stays almost
+ * invisible (only its polished edges catch the studio), the etched strokes
+ * catch the light and glow. A slim frosted caption carries the count and the
+ * credit; the quotes themselves are in the copy layer for screen readers.
  *
  *   0.00–0.09  intro: the row powers up out of the cut (standby lines come on
  *              along the bases, near to far); “We listen. They talk.” over the
@@ -114,12 +115,11 @@ export default function create(): Chapter {
     stack = el('div', 'vc-stack', undefined, panel)
     TESTIMONIALS.forEach(t => {
       const root = el('div', 'vc-card', undefined, stack)
-      if (t.quote.length > 170) root.classList.add('vc-card--long')
-      const q = rise(el('blockquote', 'hud-quote vc-quote', undefined, root), `“${t.quote}”`)
+      // the quote is engraved in the plaque; the caption credits it
       const who = el('p', 'vc-who', undefined, root)
-      const name = rise(el('span', 'hud-label vc-name', undefined, who), t.name)
+      const name = rise(el('span', 'vc-name', undefined, who), t.name)
       const co = rise(el('span', 'hud-label vc-co', undefined, who), t.company)
-      cards.push({ root, parts: [q, name, co], h: 0 })
+      cards.push({ root, parts: [name, co], h: 0 })
     })
     if (typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(entries => {
@@ -366,7 +366,8 @@ export default function create(): Chapter {
     async init(ctx: ChapterContext) {
       buildDom(ctx.stage)
       const fontsOk = await engraveFontsReady(2500)
-      const cw = ctx.mobile ? 640 : 768
+      // the quote is body text: enough texels for it to stay crisp on a large plaque
+      const cw = ctx.mobile ? 768 : 1024
       const engr = buildEngravings(TESTIMONIALS, { w: cw, h: Math.round((cw * PH) / PW), slotV: SLOT_V })
       for (const it of engr.items) {
         it.redraw()

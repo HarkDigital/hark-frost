@@ -18,7 +18,8 @@ import { G, flattenCaps, smoothSides } from '../../kit/glass'
  *            up the glass and leaks out of its polished edges — a bright line
  *            along the top edge, the side edges glowing near the base.
  *   etch     a plane just inside the back face carrying the engraving (RG
- *            mask): the sandblasted strokes catch the edge light and GLOW,
+ *            mask: the quote, the credit): the sandblasted strokes catch the
+ *            edge light and GLOW,
  *            brightest near the base and falling off upward, ice-white with a
  *            faint neon tint low down. `lit` ignites it; `front` is the light
  *            climbing the glass from the base.
@@ -77,8 +78,9 @@ const ETCH_FRAG = /* glsl */ `
     vec2 m = texture2D(uMap, vUv).rg;
     // height above the slot, 0 (base) .. ~1 (top)
     float yb = max(vUv.y - uSlot, 0.0) / (1.0 - uSlot);
-    // edge-lit: the light enters at the base and fades as it climbs
-    float fall = 0.3 + 0.7 * exp(-yb * 2.2);
+    // edge-lit: the light enters at the base and fades as it climbs (gently: the
+    // quote runs up the glass and has to stay readable at the top)
+    float fall = 0.58 + 0.42 * exp(-yb * 2.2);
     // the ignition front climbing from the base
     float front = 1.0 - smoothstep(uFront - 0.14, uFront, yb);
     float e = uLit * front * fall;

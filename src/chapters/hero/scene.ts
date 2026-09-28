@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import { G, edgeGlow, frostedLogo, neonTube, type FrostedLogo, type NeonTube, flattenCaps, smoothSides } from '../../kit/glass'
-import { rng } from '../../core/math'
 
 /*
  * FROST — the hero set. A black gallery with one object in it.
@@ -9,9 +8,7 @@ import { rng } from '../../core/math'
  *                  satin-frosted rounded bevel (no polished rim). The outline
  *                  is the Illustrator master's, and the bevel rolls inward
  *                  from it, so the silhouette is the logo exactly. The caps
- *                  carry a sandblast grain (a tiled normal map that also
- *                  speckles the transmitted light: it reads in the macro shots
- *                  and mip-averages away in the wide ones) and a moving THAW
+ *                  are smooth frosted glass (no grain texture) with a moving THAW
  *                  window — a clear, crisp spot with a crystalline melt front,
  *                  injected into the roughness (uniforms only, one program,
  *                  never recompiled). A faint fresnel rim (same geometry,
@@ -60,8 +57,7 @@ export interface HeroSet {
   sides: THREE.MeshPhysicalMaterial
   /**
    * caps shader uniforms: uThaw (x, y in mark units, open 0..1), uThawR (mark
-   * units), uGrain (how much the sandblast speckles the light), uFront (the
-   * thaw's crystalline rim)
+   * units), uFront (the thaw's crystalline rim)
    */
   capsU: CapsUniforms
   /** fresnel rim on the silhouette (additive, same geometry) */
@@ -81,50 +77,7 @@ export interface HeroSet {
 export interface CapsUniforms {
   uThaw: { value: THREE.Vector3 }
   uThawR: { value: number }
-  uGrain: { value: number }
   uFront: { value: number }
-}
-
-/**
- * Sandblast grain: a tiny tiling normal map. Height = white noise blurred to
- * ~2 texel grains; normals from its gradient. Linear, mipmapped.
- */
-function grainTexture(size = 256): THREE.DataTexture {
-  const rand = rng(11)
-  const h = new Float32Array(size * size)
-  for (let i = 0; i < h.length; i++) h[i] = rand()
-  // two box-blur passes (wrapping) → soft, rounded grains
-  const tmp = new Float32Array(size * size)
-  const idx = (x: number, y: number) => ((y + size) % size) * size + ((x + size) % size)
-  for (let pass = 0; pass < 2; pass++) {
-    for (let y = 0; y < size; y++)
-      for (let x = 0; x < size; x++) tmp[idx(x, y)] = (h[idx(x - 1, y)] + h[idx(x, y)] + h[idx(x + 1, y)]) / 3
-    for (let y = 0; y < size; y++)
-      for (let x = 0; x < size; x++) h[idx(x, y)] = (tmp[idx(x, y - 1)] + tmp[idx(x, y)] + tmp[idx(x, y + 1)]) / 3
-  }
-  const data = new Uint8Array(size * size * 4)
-  const k = 6
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = (h[idx(x + 1, y)] - h[idx(x - 1, y)]) * k
-      const dy = (h[idx(x, y + 1)] - h[idx(x, y - 1)]) * k
-      const inv = 1 / Math.hypot(dx, dy, 1)
-      const o = (y * size + x) * 4
-      data[o] = Math.round((-dx * inv * 0.5 + 0.5) * 255)
-      data[o + 1] = Math.round((-dy * inv * 0.5 + 0.5) * 255)
-      data[o + 2] = Math.round((inv * 0.5 + 0.5) * 255)
-      data[o + 3] = 255
-    }
-  }
-  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.UnsignedByteType)
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
-  tex.magFilter = THREE.LinearFilter
-  tex.minFilter = THREE.LinearMipmapLinearFilter
-  tex.generateMipmaps = true
-  tex.anisotropy = 4
-  tex.colorSpace = THREE.NoColorSpace
-  tex.needsUpdate = true
-  return tex
 }
 
 /** Clean normals for close-ups (smooth bevels, flat caps). ~20–60 ms: run it after a yield. */
@@ -159,7 +112,7 @@ function crispTransmissionChunk(): string | null {
 const CAPS_PARS = /* glsl */ `
 varying vec3 vMarkP;
 uniform vec3 uThaw;
-uniform float uThawR, uGrain, uFront;
+uniform float uThawR, uFront;
 float heroHash( vec2 p ) { vec3 p3 = fract( vec3( p.xyx ) * 0.1031 ); p3 += dot( p3, p3.yzx + 33.33 ); return fract( ( p3.x + p3.y ) * p3.z ); }
 float heroNoise( vec2 p ) {
 	vec2 i = floor( p ), f = fract( p );
@@ -184,15 +137,7 @@ const CAPS_THAW = /* glsl */ `#include <roughnessmap_fragment>
 	}
 	roughnessFactor = mix( roughnessFactor, 0.0, thawK );`
 
-const CAPS_GRAIN = /* glsl */ `#include <normal_fragment_maps>
-	normal = normalize( mix( normal, nonPerturbedNormal, thawK ) );
-	// the sandblast speckles the light it lets through (lit from the upper left);
-	// mip-averaged to nothing when the grain is sub-pixel
-	vec3 grainT = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
-	float grainL = dot( grainT.xy, vec2( -0.6, 0.8 ) ) * ( 1.0 - thawK );`
-
-const CAPS_OUT = /* glsl */ `outgoingLight *= max( 1.0 + uGrain * grainL, 0.0 );
-	outgoingLight += vec3( 0.93, 0.95, 1.0 ) * ( uFront * frostFront );
+const CAPS_OUT = /* glsl */ `outgoingLight += vec3( 0.93, 0.95, 1.0 ) * ( uFront * frostFront );
 	#include <opaque_fragment>`
 
 export function buildMark(mobile: boolean, envMap: THREE.Texture | null): Pick<HeroSet, 'pivot' | 'logo' | 'caps' | 'sides' | 'capsU' | 'rim' | 'markAspect'> {
@@ -213,21 +158,13 @@ export function buildMark(mobile: boolean, envMap: THREE.Texture | null): Pick<H
   }
   // (the chapter drives both intensities: dark before the reveal, lit after)
   caps.envMapIntensity = 0.1
-  // a short optical path through the flat faces: the sandblast grain glints instead of
-  // warping the light behind it into a hammered-glass ripple
+  // a short optical path through the flat faces: they diffuse what's behind without warping it
   caps.thickness = 0.16
   sides.envMapIntensity = 0.3
-  // the sandblast grain: coarse enough to read in the macro shots (a few device px per
-  // grain there), fine enough to mip-average away when the whole mark is on screen
-  const grain = grainTexture()
-  grain.repeat.set(mobile ? 7 : 9, mobile ? 7 : 9)
-  caps.normalMap = grain
-  caps.normalScale.set(0.02, 0.02)
   // the thaw: a clear window that glides across the caps
   const capsU: CapsUniforms = {
     uThaw: { value: new THREE.Vector3(0, 0, 0) },
     uThawR: { value: 0.066 },
-    uGrain: { value: 0 },
     uFront: { value: 0 },
   }
   const crisp = crispTransmissionChunk()
@@ -241,10 +178,9 @@ export function buildMark(mobile: boolean, envMap: THREE.Texture | null): Pick<H
     sh.fragmentShader = f
       .replace('#include <common>', `#include <common>\n${CAPS_PARS}`)
       .replace('#include <roughnessmap_fragment>', CAPS_THAW)
-      .replace('#include <normal_fragment_maps>', CAPS_GRAIN)
       .replace('#include <opaque_fragment>', CAPS_OUT)
   }
-  caps.customProgramCacheKey = () => 'hark-frost-hero-caps-2'
+  caps.customProgramCacheKey = () => 'hark-frost-hero-caps-3'
 
   // light caught inside the glass escapes at its silhouette: a faint fresnel rim
   const rim = edgeGlow(G.ice, 3, 0)

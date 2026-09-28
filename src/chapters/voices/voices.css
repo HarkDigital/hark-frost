@@ -1,7 +1,8 @@
 /* ------------------------------------------------------------------
-   Edge-lit (voices) — the intro headline and the frosted quote panel.
-   Black space, one frosted card; the names are engraved in the glass
-   plaques (WebGL). Every selector is scoped under .stage-voices.
+   Edge-lit (voices) — the intro headline and a slim frosted caption.
+   Black space; the QUOTES are engraved in the glass plaques (WebGL), the
+   caption carries the count and the credit (client · company). Every
+   selector is scoped under .stage-voices.
    ------------------------------------------------------------------ */
 
 .stage-voices .vc-intro {
@@ -32,18 +33,18 @@
   line-height: 0.95;
 }
 
-/* ---------------- the quote panel ---------------- */
+/* ---------------- the caption ---------------- */
 
 .stage-voices .vc-panel {
   --glass-fill-strong: rgba(8, 8, 10, 0.72);
   position: absolute;
   left: var(--gutter);
   bottom: var(--safe-bottom);
-  width: min(470px, 37vw);
+  width: min(340px, 27vw);
   margin: 0;
-  padding: 22px 26px 24px;
+  padding: 18px 22px 20px;
   display: grid;
-  gap: 20px;
+  gap: 14px;
   opacity: 0;
   visibility: hidden;
   transform: translate3d(0, 14px, 0);
@@ -126,47 +127,25 @@
   transition-delay: 0s;
 }
 
-.stage-voices .vc-quote {
-  margin: 0;
-  font-size: clamp(1.25rem, 1.8vw, 1.9rem);
-  line-height: 1.24;
-  letter-spacing: -0.024em;
-  /* hang the opening mark in the margin */
-  text-indent: -0.42em;
-}
-.stage-voices .vc-card--long .vc-quote {
-  font-size: clamp(1.14rem, 1.55vw, 1.65rem);
-}
-.stage-voices .vc-quote .rise-w,
-.stage-voices .vc-quote .rise-w > span {
-  text-indent: 0;
-}
-/* the incoming quote waits for the outgoing one to clear; long quotes land in ~1.1 s */
-.stage-voices .vc-card .rise.is-in .rise-w > span {
-  transition-delay: calc(0.28s + min(var(--i, 0), 26) * 18ms);
-}
-
 .stage-voices .vc-who {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  margin: 18px 0 0;
-}
-.stage-voices .vc-who::before {
-  content: '';
-  width: 22px;
-  height: 1px;
-  background: var(--line-strong);
+  display: grid;
+  gap: 6px;
+  margin: 0;
 }
 .stage-voices .vc-name {
+  font-family: var(--font-display);
+  font-size: clamp(1.15rem, 1.45vw, 1.45rem);
+  font-weight: 560;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
   color: var(--fg);
 }
 .stage-voices .vc-co {
   color: var(--fg-muted);
 }
+/* the credit waits for the outgoing one to clear */
 .stage-voices .vc-card .vc-who .rise.is-in .rise-w > span {
-  transition-delay: calc(0.5s + var(--i, 0) * 30ms);
+  transition-delay: calc(0.28s + var(--i, 0) * 30ms);
 }
 
 /* ---------------- portrait: the plaque above, the panel below ---------------- */
@@ -181,18 +160,11 @@
     width: auto;
     max-width: 620px;
     margin: 0 auto;
-    padding: 18px 20px 20px;
-    gap: 14px;
+    padding: 14px 18px 16px;
+    gap: 10px;
   }
-  .stage-voices .vc-quote {
-    font-size: clamp(1.06rem, 4.6vw, 1.6rem);
-    line-height: 1.26;
-  }
-  .stage-voices .vc-card--long .vc-quote {
-    font-size: clamp(0.98rem, 4.15vw, 1.45rem);
-  }
-  .stage-voices .vc-who {
-    margin-top: 14px;
+  .stage-voices .vc-name {
+    font-size: 1.1rem;
   }
 }
 
@@ -205,17 +177,12 @@
     gap: 10px;
   }
   .stage-voices .vc-panel {
-    width: min(420px, 44vw);
-    padding: 12px 16px 14px;
-    gap: 10px;
+    width: min(300px, 34vw);
+    padding: 10px 14px 12px;
+    gap: 8px;
     border-radius: 16px;
   }
-  .stage-voices .vc-quote,
-  .stage-voices .vc-card--long .vc-quote {
-    font-size: clamp(0.88rem, 2.1vw, 1.02rem);
-    line-height: 1.28;
-  }
-  .stage-voices .vc-who {
-    margin-top: 8px;
+  .stage-voices .vc-name {
+    font-size: 0.98rem;
   }
 }
