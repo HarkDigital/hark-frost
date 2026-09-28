@@ -6,7 +6,7 @@ import { nextFrame } from '../../core/yield'
 import { BRAND } from '../../content'
 import { G } from '../../kit/glass'
 import { buildHud, measureHud, type Hud, type HudLayout } from './hud'
-import { buildScene, SLIT_DEPTH, THAW_OUTER, type ThawScene } from './scene'
+import { buildScene, GAIN, SLIT_DEPTH, THAW_OUTER, type ThawScene } from './scene'
 import './contact.css'
 
 /*
@@ -208,7 +208,7 @@ export default function create(): Chapter {
       u.uRime.value = 0.42 * rime
       // the re-formed frost is fresh and dense: it gathers a little more light
       // than the landing's, so the finale is the brightest, sharpest mark
-      u.uGain.value = 2.3 + 0.5 * home
+      u.uGain.value = GAIN + 0.3 * home
 
       // the address answers: the halo swells while it's hovered, a soft breath on copy
       const hoverTo = hud.hover ? 1 : 0

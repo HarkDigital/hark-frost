@@ -8,8 +8,9 @@ import { frostedLogo, G, type FrostedLogo } from '../../kit/glass'
  *          area beside (landscape) or above (portrait) the contact panel.
  *          1 rig unit = the mark's height.
  *   turn   the mark's slow turntable (yaw / tilt / float) inside the rig.
- *   logo   the super-sharp frosted Hark mark (kit frostedLogo): sandblasted
- *          caps, a deep polished bevel. Its caps material is patched so the
+ *   logo   the super-sharp frosted Hark mark (kit frostedLogo): a straight-
+ *          walled slab with sharp edges (no bevel), translucent frosted caps
+ *          and polished walls. Its caps material is patched so the
  *          frost can THAW spatially:
  *            - roughness is mixed per fragment between the sandblast and
  *              clear glass across a noise-edged front that grows from the
@@ -86,6 +87,10 @@ export const SLIT_DEPTH = 1.4
 
 /** the mark's thaw front reaches past its farthest corner at this radius (object units) */
 export const THAW_OUTER = 0.66
+/** the frost: light enough to be translucent (what's behind reads as soft shapes), not milky */
+export const FROST = 0.22
+/** how much extra light the frost gathers from behind (kept low: translucent, not a lamp) */
+export const GAIN = 1.2
 
 const LOD_RE = /float lod = log2\( transmissionSamplerSize\.x \) \* applyIorToRoughness\( roughness, ior \);/
 
@@ -216,8 +221,8 @@ export function buildScene(isFrameTarget: (rt: THREE.WebGLRenderTarget | null) =
   const turn = new THREE.Group()
   rig.add(turn)
 
-  // the mark: deep polished bevel, sandblasted caps
-  const logo = frostedLogo({ depth: 0.18, bevel: 0.026, frost: 0.46 })
+  // the mark: a straight-walled slab (no bevel, sharp edges), translucent frosted faces
+  const logo = frostedLogo({ depth: 0.23, bevel: 0, frost: FROST })
   logo.caps.envMapIntensity = 1
   logo.sides.envMapIntensity = 2
   turn.add(logo.root)
@@ -229,7 +234,7 @@ export function buildScene(isFrameTarget: (rt: THREE.WebGLRenderTarget | null) =
     uMelt: { value: 0 },
     uMeltW: { value: 0.0055 },
     uMeltColor: { value: new THREE.Color(G.ice) },
-    uGain: { value: 2.3 },
+    uGain: { value: GAIN },
     uFrost: { value: 2 },
     uHaze: { value: 0.11 },
     uRime: { value: 0 },
@@ -271,8 +276,8 @@ export function buildScene(isFrameTarget: (rt: THREE.WebGLRenderTarget | null) =
     const rt = renderer.getRenderTarget()
     const main = rt === null || isFrameTarget(rt as THREE.WebGLRenderTarget)
     slitU.uTube.value = 3.2
-    slitU.uHalo.value = main ? 0.32 : 1.1
-    slitU.uSpill.value = main ? 0.03 : 0.42
+    slitU.uHalo.value = main ? 0.32 : 0.8
+    slitU.uSpill.value = main ? 0.03 : 0.16
     ;(slits.material as THREE.ShaderMaterial).uniformsNeedUpdate = true
   }
   rig.add(slits)

@@ -4,7 +4,7 @@ import { el, reveal, rise, setRise } from '../../core/dom'
 import { BRAND, MICROCOPY } from '../../content'
 import { clamp, lerp, segment, smoothstep } from '../../core/math'
 import { nextFrame } from '../../core/yield'
-import { FLOOR_MIRROR, MARK_S, THAW_A, THAW_B, buildCard, buildFloor, buildMark, buildNeon, buildReflection, refineMark, type HeroSet } from './scene'
+import { FLOOR_MIRROR, FROST, MARK_S, THAW_A, THAW_B, buildCard, buildFloor, buildMark, buildNeon, buildReflection, refineMark, type HeroSet } from './scene'
 import './hero.css'
 
 /*
@@ -372,7 +372,7 @@ export default function create(): Chapter {
       s.capsU.uThaw.value.set(lerp(THAW_A.x, THAW_B.x, thawP), lerp(THAW_A.y, THAW_B.y, thawP), thawK)
       s.capsU.uThawR.value = 0.066
       s.capsU.uFront.value = 0.4
-      s.caps.roughness = 0.46
+      s.caps.roughness = FROST
 
       // ---- the backlight card: camera-facing, behind the mark; it drifts in macro
       const camToMark = tmpC.copy(pos).negate().normalize() // the mark's centre is the origin
@@ -405,8 +405,8 @@ export default function create(): Chapter {
       cu.uRings.value = 1.6
       // close up the card fills the view: dim it there, or the faces clip to flat white
       // (and a little more behind the thaw, so its razor line reads through the clear glass)
-      s.cardK.trans.glow = 0.62 * rLight * lerp(1, 0.55, macro) * (1 - 0.45 * lineK)
-      s.cardK.trans.wide = 0.4 * rLight * lerp(1, 0.4, macro) * (1 - 0.45 * lineK)
+      s.cardK.trans.glow = 0.34 * rLight * lerp(1, 0.55, macro) * (1 - 0.45 * lineK)
+      s.cardK.trans.wide = 0.1 * rLight * lerp(1, 0.4, macro) * (1 - 0.45 * lineK)
       s.cardK.trans.slit = 0
       s.cardK.trans.bar = 0
       // the thaw's light strip, straight behind the thaw path (from the camera): the window
@@ -437,8 +437,8 @@ export default function create(): Chapter {
         n.k.main.glow = 0.34
         n.k.main.spill = 0.035
         n.k.trans.tube = 3.2
-        n.k.trans.glow = 1.7 * lerp(1, 0.6, macro)
-        n.k.trans.spill = 0.45 * lerp(1, 0.55, macro)
+        n.k.trans.glow = 0.9 * lerp(1, 0.6, macro)
+        n.k.trans.spill = 0.16 * lerp(1, 0.55, macro)
       }
 
       // ---- floor pool + reflection

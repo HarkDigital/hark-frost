@@ -44,6 +44,11 @@ export const FLOOR_Y = -MARK_S / 2 - 0.36
  */
 const DEPTH = 0.24
 const BEVEL = 0
+/**
+ * the frost (roughness): translucent — the neon and the light behind read
+ * through it as soft shapes — rather than milky
+ */
+export const FROST = 0.22
 export const FRONT_Z = DEPTH / 2 + BEVEL
 /**
  * the thaw window's path across the front cap (mark units): down the centre of
@@ -144,11 +149,11 @@ const CAPS_OUT = /* glsl */ `outgoingLight += vec3( 0.93, 0.95, 1.0 ) * ( uFront
 	#include <opaque_fragment>`
 
 export function buildMark(mobile: boolean, envMap: THREE.Texture | null): Pick<HeroSet, 'pivot' | 'logo' | 'caps' | 'sides' | 'capsU' | 'rim' | 'markAspect'> {
-  const logo = frostedLogo({ depth: DEPTH, bevel: BEVEL, frost: 0.46 })
+  const logo = frostedLogo({ depth: DEPTH, bevel: BEVEL, frost: FROST })
   const { caps, sides } = logo
   // FULLY frosted: the walls are frosted too — a satin frost a touch smoother
   // than the faces, so the sharp edges read as a fine bright line, not a mirror
-  sides.roughness = 0.34
+  sides.roughness = FROST * 0.8
   sides.clearcoat = 0
   sides.dispersion = 0
   sides.thickness = 0.12
