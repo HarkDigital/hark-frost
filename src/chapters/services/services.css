@@ -157,6 +157,47 @@
   transition-delay: 0.24s;
 }
 
+/* the service's full page on the classic site */
+.stage-services .et-more {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 0;
+  padding: 6px 0;
+  color: var(--fg);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-decoration: none;
+  opacity: 0;
+  transform: translate3d(0, 6px, 0);
+  transition:
+    opacity 0.25s ease,
+    transform 0.3s ease;
+}
+.stage-services .et-item.is-on .et-more {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.6s ease 0.32s,
+    transform 0.9s var(--et-ease) 0.32s;
+}
+.stage-services .et-more-arrow {
+  display: inline-block;
+  transition: transform 0.4s var(--et-ease);
+}
+.stage-services .et-more:hover .et-more-arrow {
+  transform: translate3d(6px, 0, 0);
+}
+.stage-services .et-more:hover {
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.45);
+}
+.stage-services .et-more:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
 /* 01–11: a row of small frosted keys; the lit one carries a polished bar */
 .stage-services .et-keys {
   display: grid;
@@ -286,6 +327,10 @@
     font-size: 9.5px;
     padding: 4px 8px;
   }
+  .stage-services .et-more {
+    padding: 4px 0;
+    font-size: 10.5px;
+  }
   .stage-services .et-keys {
     gap: 2px;
     padding-top: 8px;
@@ -338,6 +383,10 @@
   }
   .stage-services .et-tags {
     display: none;
+  }
+  .stage-services .et-more {
+    padding: 2px 0;
+    font-size: 10px;
   }
   .stage-services .et-keys {
     padding-top: 6px;

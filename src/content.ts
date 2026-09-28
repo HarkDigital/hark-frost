@@ -42,6 +42,11 @@ export const BRAND = {
   classicSite: 'https://harkdigital.github.io/hark-digital-2026/',
 }
 
+/** The service's full page on the classic 2026 site (its own route: /services/<slug>). */
+export const serviceUrl = (slug: string) => `${BRAND.classicSite}services/${slug}`
+/** the classic site's own call to action on each service card, verbatim */
+export const SERVICE_CTA = 'Explore the service'
+
 export interface Service {
   num: string
   slug: string

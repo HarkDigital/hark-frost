@@ -1,5 +1,5 @@
 import { el, rise, setRise } from '../../core/dom'
-import { SECTIONS, SERVICES } from '../../content'
+import { SECTIONS, SERVICE_CTA, SERVICES, serviceUrl } from '../../content'
 
 /*
  * DOM for Etched. Scroll decides WHAT is on screen (the intro or which
@@ -7,7 +7,8 @@ import { SECTIONS, SERVICES } from '../../content'
  * ease-outs), so wherever the scroll rests the copy is settled and exact.
  *
  *   intro   eyebrow + "Eleven ways to be heard."
- *   card    frosted glass: NN / 11 · title · blurb · tags · 01–11 index
+ *   card    frosted glass: NN / 11 · title · blurb · tags · the service's full
+ *           page on the classic site ("Explore the service →") · 01–11 index
  *
  * All eleven items share one grid cell, so the card never changes size.
  * metrics() reports the live layout so the camera frames the column into
@@ -71,6 +72,12 @@ export class Hud {
       el('p', 'hud-body et-blurb', s.blurb, root)
       const tags = el('ul', 'hud-tags et-tags', undefined, root)
       for (const t of s.tags) el('li', 'hud-tag', t, tags)
+      const more = el('a', 'hud-label et-more', undefined, root)
+      more.href = serviceUrl(s.slug)
+      more.target = '_blank'
+      more.rel = 'noopener'
+      el('span', '', SERVICE_CTA, more)
+      el('span', 'et-more-arrow', '→', more).setAttribute('aria-hidden', 'true')
       this.items.push({ root, title })
     }
     const keys = el('div', 'et-keys', undefined, this.card)
