@@ -4,20 +4,23 @@ import { el, reveal, rise, setRise } from '../../core/dom'
 import { BRAND, MICROCOPY } from '../../content'
 import { clamp, lerp, segment, smoothstep } from '../../core/math'
 import { nextFrame } from '../../core/yield'
-import { FLOOR_MIRROR, MARK_S, THAW_A, THAW_B, buildCard, buildFloor, buildMark, buildReflection, refineMark, type HeroSet } from './scene'
+import { FLOOR_MIRROR, MARK_S, THAW_A, THAW_B, buildCard, buildFloor, buildMark, buildNeon, buildReflection, refineMark, type HeroSet } from './scene'
 import './hero.css'
 
 /*
- * HERO — "Frost". One object in a black gallery: the Hark mark in
- * sandblasted glass with a deep polished bevel, lit from behind, floating
- * over a black mirror floor.
+ * HERO — "Frost". One object in a black gallery: the Hark mark in fully
+ * frosted glass, lit from behind by a light card and two neon tubes,
+ * floating over a black mirror floor.
  *
  *   0.00–0.10  INTRO   the mark large, centred-right, a slight three-quarter;
- *                      a slow turntable sway (±12°) and a light sweep along
+ *                      a slow turntable sway (±12°) and a soft sheen along
  *                      the bevels every ~8 s. After the loader (time-based,
  *                      ~1.8 s): the backlight fades up from black, the frost
- *                      lights from the centre outward, one highlight sweeps.
- *   0.10–0.56  MACRO   the camera travels in close: along the polished bevel,
+ *                      lights from the centre outward, the two neon tubes
+ *                      strike one after the other (a single stutter each; a
+ *                      plain fade under reduced motion) and wash the frost
+ *                      with cyan and violet.
+ *   0.10–0.56  MACRO   the camera travels in close: along the frosted bevel,
  *                      across the sandblasted face (the backlight drifts
  *                      behind it, so the frost gradient shifts; the grain
  *                      reads), then a clear THAW window glides over the face
@@ -64,7 +67,7 @@ const ROT = 9
 const TILT = 10
 const NV = 11
 
-/** the macro captions' local windows: 01 polished edge, 02 sandblasted face, 03 thaw */
+/** the macro captions' local windows: 01 frosted edge, 02 sandblasted face, 03 thaw */
 const BEATS: [number, number][] = [
   [0.14, 0.3],
   [0.31, 0.43],
@@ -235,8 +238,9 @@ export default function create(): Chapter {
       const card = buildCard(rt => ctx.post.isFrameTarget(rt))
       const floor = buildFloor()
       const reflection = buildReflection(mark.logo.mark.geometry)
-      set = { ...mark, ...card, floor, reflection }
-      group.add(set.card, set.floor, set.pivot, set.reflection)
+      const neon = buildNeon(rt => ctx.post.isFrameTarget(rt))
+      set = { ...mark, ...card, floor, reflection, ...neon }
+      group.add(set.card, set.floor, set.pivot, set.reflection, ...set.neon.map(n => n.mesh), ...set.neonRefl)
 
       // ---- DOM
       intro = el('div', 'hf-intro', undefined, ctx.stage)
@@ -249,7 +253,7 @@ export default function create(): Chapter {
       // macro captions: a watch-film detail index (decorative)
       const capWrap = el('div', 'hf-caps', undefined, ctx.stage)
       capWrap.setAttribute('aria-hidden', 'true')
-      ;['Polished edge', 'Sandblasted face', 'Thaw'].forEach((txt, i) => {
+      ;['Frosted edge', 'Sandblasted face', 'Thaw'].forEach((txt, i) => {
         const c = el('p', 'hud-label hf-cap', undefined, capWrap)
         el('span', 'hf-cap-n', `0${i + 1}`, c)
         el('span', 'hf-cap-line', undefined, c)
@@ -298,7 +302,16 @@ export default function create(): Chapter {
       const rLight = sm(since * rk, 0.0, 1.25)
       const rSpread = sm(since * rk, 0.1, 1.6)
       const rHalo = sm(since * rk, 0.2, 1.8)
-      const rSlit = sm(since * rk, 0.7, 1.9)
+      // the neon strikes: cyan, then violet (one stutter each, well under 3 flashes a second)
+      const strike = (t0: number) => {
+        const x = since - t0
+        if (x <= 0 || revealAt < 0) return 0
+        if (reduced) return sm(x, 0, 0.6)
+        if (x < 0.06) return 0.75
+        if (x < 0.15) return 0.22
+        return 0.55 + 0.45 * sm(x, 0.15, 0.55)
+      }
+      const rNeon = [strike(0.55), strike(0.95)]
       const rSweep = reduced ? 0 : 1.1 * (1 - outQuart(segment(since, 0.8, 2.4))) * smoothstep(0.6, 0.9, since)
 
       // ---- camera keys
@@ -393,18 +406,14 @@ export default function create(): Chapter {
       if (focusK > 0) onCardWorld(s, focusW.set(val[TX], val[TY], val[TZ]), focus)
       const sweepX = -0.35 + 0.7 * sm(local, 0.14, 0.43)
       cu.uHot.value.set(lerp(0.12 + 0.3 * drift, focus.x + sweepX, focusK), lerp(0.06, focus.y + 0.12, focusK))
-      // two slits behind the loops; in macro they glide behind the face
-      cu.uSlitX.value.set(-0.62 + 0.55 * drift, 0.52 - 0.35 * drift)
-      cu.uSlitA.value.set(1, 0.72)
-      cu.uSlitH.value = 3.2
+      // (the card's slits stay off: the neon tubes stand where they were)
       cu.uRings.value = 1.6
       // close up the card fills the view: dim it there, or the faces clip to flat white
       // (and a little more behind the thaw, so its razor line reads through the clear glass)
       s.cardK.trans.glow = 0.62 * rLight * lerp(1, 0.55, macro) * (1 - 0.45 * lineK)
       s.cardK.trans.wide = 0.4 * rLight * lerp(1, 0.4, macro) * (1 - 0.45 * lineK)
-      s.cardK.trans.slit = 3.2 * rLight * rSlit
-      s.cardK.trans.width = 0.009
-      s.cardK.trans.bar = 0.6 * rLight * rSlit
+      s.cardK.trans.slit = 0
+      s.cardK.trans.bar = 0
       // the thaw's light strip, straight behind the thaw path (from the camera): the window
       // glides along it, so inside the window it's a razor line, outside a frosted bar
       if (lineK > 0) {
@@ -422,8 +431,20 @@ export default function create(): Chapter {
       // the macro shots; the thaw shows the clean light (and a slit) instead
       s.cardK.trans.rings = 0
       s.cardK.main.glow = 0.035 * rLight * (1 - 0.5 * macro)
-      s.cardK.main.slit = 0.32 * rSlit * (1 - outW)
-      s.cardK.main.width = 0.003
+      s.cardK.main.slit = 0
+
+      // ---- the neon: tubes + a tight halo in the room, a broad coloured spill in the glass buffer
+      // (close up the tubes fill more of the frost's view: ease the spill so the faces don't clip)
+      for (let i = 0; i < s.neon.length; i++) {
+        const n = s.neon[i]
+        n.on.value = rNeon[i] * (1 - 0.6 * outW)
+        n.k.main.tube = 3.2
+        n.k.main.glow = 0.34
+        n.k.main.spill = 0.035
+        n.k.trans.tube = 3.2
+        n.k.trans.glow = 1.7 * lerp(1, 0.6, macro)
+        n.k.trans.spill = 0.45 * lerp(1, 0.55, macro)
+      }
 
       // ---- floor pool + reflection
       const fu = s.floor.material.uniforms

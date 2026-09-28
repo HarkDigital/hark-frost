@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
-import { logoParts, logoShapes } from '../logo/logo'
+import { extrudeInset, logoParts, logoShapes } from '../logo/logo'
 
 /*
  * Hark Glass kit — one visual language for every chapter.
@@ -45,6 +45,13 @@ export const G = {
   white: '#f6f7f9',
   /** a barely-cool white for backlight halos (never a colour accent) */
   ice: '#e6eeff',
+  /**
+   * the NEON pair: the only saturated light in the room. Glass tubes behind
+   * frosted glass (the frost diffuses them into soft colour); never text,
+   * never UI fills
+   */
+  neonA: '#3fd4ff',
+  neonB: '#8f63ff',
   /** hostile tint, shield chapter only */
   ember: '#ff4d4d',
 } as const
@@ -267,17 +274,11 @@ export function frostedLogo(
   const shapes = o.shapes ?? logoShapes()
   const depth = o.depth ?? 0.16
   const bevel = o.bevel ?? 0.022
-  const geo = new THREE.ExtrudeGeometry(shapes, {
-    depth,
-    bevelEnabled: true,
-    bevelThickness: bevel,
-    bevelSize: bevel * 0.8,
-    bevelSegments: mobile ? 5 : 9,
-    curveSegments: 12,
-    steps: 1,
-  })
-  geo.translate(0, 0, -depth / 2)
-  // ExtrudeGeometry is non-indexed: creased normals keep its material groups
+  // the bevel rolls INWARD from the true outline: its widest point is the
+  // artwork's edge, so the curl channels and holes keep their drawn size
+  // (an outward bevel closed the channels and made the loops read as rings)
+  const geo = extrudeInset(shapes, { depth, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelSegments: mobile ? 5 : 9 })
+  // non-indexed (like ExtrudeGeometry): creased normals keep its material groups
   // (0 = front/back caps, 1 = sides + bevel)
   const g2 = toCreasedNormals(geo, Math.PI / 4.5)
   // clean normals for close-ups: smooth, consistent bevels (no zigzag
@@ -503,4 +504,160 @@ export function caustic(o: { size?: number; color?: THREE.ColorRepresentation; s
   const m = new THREE.Mesh(new THREE.PlaneGeometry(o.size ?? 3, o.size ?? 3), mat)
   m.rotation.x = -Math.PI / 2
   return m
+}
+
+/** What a neon tube draws in one pass (the frame, or three's glass buffer). */
+export interface NeonPass {
+  /** the tube itself: a white-hot gas core with saturated flanks */
+  tube: number
+  /** the tight halo hugging the tube */
+  glow: number
+  /** the wide coloured spill (frosted glass in front diffuses it) */
+  spill: number
+}
+
+export interface NeonTube {
+  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>
+  /** per-pass strengths; `main` = the frame, `trans` = the glass buffer frosted glass reads */
+  k: { main: NeonPass; trans: NeonPass }
+  /** 0..1 ignition (multiplies every pass) */
+  on: { value: number }
+  /**
+   * a copy for a black mirror floor: place it at the tube's mirror image
+   * (y → 2·floorY − y; a straight tube needs no flip). It draws only below
+   * `floorY`, fading with depth.
+   */
+  reflection(floorY: number, strength?: number, fade?: number): THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>
+}
+
+const NEON_VERT = /* glsl */ `
+  uniform float uLen, uWidth;
+  varying vec2 vP;
+  varying float vWY;
+  void main() {
+    // a ribbon along the tube's axis, turned to face the camera (a round tube looks the same
+    // from every side): x across in world units from the axis, y along from the centre
+    vec3 axis = normalize((modelMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+    vec3 c = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+    float along = position.y * (uLen + 2.0 * uWidth);
+    vec3 p = c + axis * along;
+    vec3 side = normalize(cross(axis, cameraPosition - p));
+    float across = position.x * 2.0 * uWidth;
+    vec3 w = p + side * across;
+    vP = vec2(across, along);
+    vWY = w.y;
+    gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+  }
+`
+const NEON_FRAG = /* glsl */ `
+  uniform vec3 uColor;
+  uniform float uLen, uR, uGlowR, uSpillR, uTube, uGlow, uSpill, uOn, uFloorY, uMirror, uFade;
+  varying vec2 vP;
+  varying float vWY;
+  void main() {
+    float halfL = uLen * 0.5;
+    float dy = max(abs(vP.y) - halfL, 0.0);
+    float d = length(vec2(vP.x, dy));
+    // the tube: a round glass tube full of glowing gas, white-hot along the middle and
+    // saturated toward its walls; anti-aliased to at least ~1.5 px so a far tube stays a line
+    // (one pixel from the ribbon's own coordinates: a derivative of the capsule
+    // distance breaks along the quad's diagonal)
+    float aa = max(length(fwidth(vP)) * 0.75, 1e-5);
+    float r = max(uR, aa * 0.75);
+    float body = 1.0 - smoothstep(r - aa, r + aa, d);
+    float x = clamp(d / r, 0.0, 1.0);
+    vec3 gas = mix(vec3(1.0), uColor, smoothstep(0.05, 0.9, x)) * (1.0 - 0.45 * x * x);
+    // the last stretch of each end is the electrode: the gas glow thins out
+    float lit = smoothstep(halfL, halfL - 0.07, abs(vP.y));
+    float halo = exp(-d * d / (uGlowR * uGlowR));
+    float spill = exp(-d * d / (uSpillR * uSpillR));
+    vec3 col = gas * body * (0.25 + 0.75 * lit) * uTube + uColor * (halo * uGlow + spill * uSpill) * mix(0.5, 1.0, lit);
+    // mirrored copy: only below the floor, fading with depth
+    float below = max(uFloorY - vWY, 0.0);
+    col *= mix(1.0, exp(-below * uFade) * step(vWY, uFloorY + 0.001), uMirror);
+    gl_FragColor = vec4(col * uOn, 1.0);
+  }
+`
+
+/**
+ * A straight NEON tube: a camera-facing ribbon along a vertical axis that
+ * draws the glowing tube, a tight halo and a wide coloured spill in one
+ * additive pass. It sits in the opaque list, so three's glass buffer sees it
+ * and frosted glass in front diffuses it into soft colour; `k.trans` sets how
+ * much light the glass gets, `k.main` what the room shows (tell the two apart
+ * with `isFrameTarget`, e.g. ctx.post.isFrameTarget). Values are HDR: a tube
+ * above the bloom threshold blooms. Position/rotate `mesh` (its local +y is
+ * the tube axis); don't scale it.
+ */
+export function neonTube(o: {
+  color: THREE.ColorRepresentation
+  length: number
+  radius?: number
+  glowRadius?: number
+  spillRadius?: number
+  isFrameTarget: (rt: THREE.WebGLRenderTarget | null) => boolean
+}): NeonTube {
+  const glowR = o.glowRadius ?? 0.09
+  const spillR = o.spillRadius ?? 0.45
+  const on = { value: 1 }
+  const uniforms = {
+    uColor: { value: new THREE.Color(o.color) },
+    uLen: { value: o.length },
+    uWidth: { value: spillR * 2.6 },
+    uR: { value: o.radius ?? 0.018 },
+    uGlowR: { value: glowR },
+    uSpillR: { value: spillR },
+    uTube: { value: 0 },
+    uGlow: { value: 0 },
+    uSpill: { value: 0 },
+    uOn: on,
+    uFloorY: { value: -1e4 },
+    uMirror: { value: 0 },
+    uFade: { value: 1 },
+  }
+  const k = {
+    main: { tube: 3, glow: 0.3, spill: 0.04 } as NeonPass,
+    trans: { tube: 3, glow: 0.6, spill: 0.3 } as NeonPass,
+  }
+  const make = (u: typeof uniforms) => {
+    const mat = new THREE.ShaderMaterial({
+      transparent: false,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+      uniforms: u,
+      vertexShader: NEON_VERT,
+      fragmentShader: NEON_FRAG,
+    })
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat)
+    mesh.frustumCulled = false
+    mesh.renderOrder = -5
+    return mesh
+  }
+  const mesh = make(uniforms)
+  const bind = (m: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>, scale = 1) => {
+    const u = m.material.uniforms
+    m.onBeforeRender = renderer => {
+      const rt = renderer.getRenderTarget()
+      const p = rt === null || o.isFrameTarget(rt as THREE.WebGLRenderTarget) ? k.main : k.trans
+      u.uTube.value = p.tube * scale
+      u.uGlow.value = p.glow * scale
+      u.uSpill.value = p.spill * scale
+      m.material.uniformsNeedUpdate = true
+    }
+  }
+  bind(mesh)
+  return {
+    mesh,
+    k,
+    on,
+    reflection(floorY, strength = 0.35, fade = 1.4) {
+      // same uniforms (shared ignition, colour, size), its own per-pass strengths and mirror
+      const u = { ...uniforms, uTube: { value: 0 }, uGlow: { value: 0 }, uSpill: { value: 0 }, uFloorY: { value: floorY }, uMirror: { value: 1 }, uFade: { value: fade } }
+      const m = make(u)
+      m.renderOrder = -4
+      bind(m, strength)
+      return m
+    },
+  }
 }

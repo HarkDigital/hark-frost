@@ -1,28 +1,35 @@
 import * as THREE from 'three'
-import { G, edgeGlow, frostedLogo, type FrostedLogo, flattenCaps, smoothSides } from '../../kit/glass'
+import { G, edgeGlow, frostedLogo, neonTube, type FrostedLogo, type NeonTube, flattenCaps, smoothSides } from '../../kit/glass'
 import { rng } from '../../core/math'
 
 /*
  * FROST — the hero set. A black gallery with one object in it.
  *
- *   the mark       kit frostedLogo(): sandblasted caps, a deep POLISHED bevel.
- *                  The caps carry a sandblast grain (a tiled normal map that
- *                  also speckles the transmitted light: it reads in the macro
- *                  shots and mip-averages away in the wide ones) and a moving
- *                  THAW window — a clear, crisp spot with a crystalline melt
- *                  front, injected into the roughness (uniforms only, one
- *                  program, never recompiled). A faint fresnel rim (same
- *                  geometry, additive) lights the silhouette from within.
+ *   the mark       kit frostedLogo(), FULLY frosted: sandblasted caps and a
+ *                  satin-frosted rounded bevel (no polished rim). The outline
+ *                  is the Illustrator master's, and the bevel rolls inward
+ *                  from it, so the silhouette is the logo exactly. The caps
+ *                  carry a sandblast grain (a tiled normal map that also
+ *                  speckles the transmitted light: it reads in the macro shots
+ *                  and mip-averages away in the wide ones) and a moving THAW
+ *                  window — a clear, crisp spot with a crystalline melt front,
+ *                  injected into the roughness (uniforms only, one program,
+ *                  never recompiled). A faint fresnel rim (same geometry,
+ *                  additive) lights the silhouette from within.
+ *   the neon       two NEON tubes standing behind the mark on the mirror
+ *                  floor (glacier cyan left, ultraviolet right). The frost
+ *                  diffuses them into soft colour across the glass; the room
+ *                  sees the tubes themselves, a tight halo and their
+ *                  reflections in the floor.
  *   the backlight  a camera-facing light card behind the mark. It renders
  *                  BRIGHT into three's transmission buffer (what the frosted
- *                  glass sees and diffuses: a broad light box, a hot core,
- *                  the two slits with soft shoulders, and in the thaw beat a
- *                  light strip straight behind the thaw path) and only
- *                  faintly in the frame itself (hairline slits), so the
+ *                  glass sees and diffuses: a broad light box and a hot core,
+ *                  and in the thaw beat a light strip straight behind the thaw
+ *                  path) and only faintly in the frame itself, so the
  *                  sandblasted faces glow luminous white-grey like a backlit
- *                  sign while the room stays black. (The card can draw
- *                  hairline rings, CardPass.rings, but they stay off:
- *                  polished bevels bend them into dashes.)
+ *                  sign while the room stays black. (The card can still draw
+ *                  hairline slits and rings, CardPass.slit / .rings; both stay
+ *                  off: the neon took the slits' place.)
  *   the floor      black, additive: a soft pool where the backlight spills,
  *                  so the world's halo reads as reflected in a black mirror.
  *   the reflection a flipped copy of the mark under the floor (cheap shader,
@@ -36,7 +43,7 @@ export const MARK_S = 2.2
 export const FLOOR_Y = -MARK_S / 2 - 0.36
 /** the mark's extrusion (mark units): the front cap sits at z = DEPTH / 2 + BEVEL */
 const DEPTH = 0.2
-const BEVEL = 0.026
+const BEVEL = 0.024
 export const FRONT_Z = DEPTH / 2 + BEVEL
 /**
  * the thaw window's path across the front cap (mark units): down the centre of
@@ -64,6 +71,9 @@ export interface HeroSet {
   cardK: { main: CardPass; trans: CardPass }
   floor: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>
   reflection: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>
+  /** the two neon tubes behind the mark [cyan left, violet right] and their floor reflections */
+  neon: NeonTube[]
+  neonRefl: THREE.Mesh[]
   /** the mark's width / height */
   markAspect: number
 }
@@ -188,21 +198,15 @@ const CAPS_OUT = /* glsl */ `outgoingLight *= max( 1.0 + uGrain * grainL, 0.0 );
 export function buildMark(mobile: boolean, envMap: THREE.Texture | null): Pick<HeroSet, 'pivot' | 'logo' | 'caps' | 'sides' | 'capsU' | 'rim' | 'markAspect'> {
   const logo = frostedLogo({ depth: DEPTH, bevel: BEVEL, frost: 0.46 })
   const { caps, sides } = logo
-  // monochrome and razor sharp: no dispersion split on the polished edges
+  // FULLY frosted: the rounded bevel is sandblasted too — a satin frost a touch
+  // smoother than the faces, so it rolls the light into a soft bright rim
+  // instead of a polished mirror edge
+  sides.roughness = 0.34
+  sides.clearcoat = 0
   sides.dispersion = 0
-  sides.clearcoat = 1
-  sides.clearcoatRoughness = 0.02
-  // phones: the thinnest rim highlight is sub-pixel; a touch more roughness keeps it a line, not dots
-  if (mobile) {
-    sides.roughness = 0.045
-    sides.clearcoatRoughness = 0.05
-  }
-  // a thin optical path through the bevels: they bend what's behind cleanly instead of scrambling it
-  sides.thickness = 0.07
-  // clear edges pass less light than the frost glows (much of it bends away): darker
-  // polished walls under crisp highlights read as glass, and outline the mark sharply
-  sides.color.setScalar(0.55)
-  // own env maps, so caps (a sandblasted sheen) and bevels (crisp strips) are lit separately
+  sides.thickness = 0.12
+  sides.color.setScalar(1)
+  // own env maps, so caps (a sandblasted sheen) and bevels (a satin rim) are lit separately
   if (envMap) {
     caps.envMap = envMap
     sides.envMap = envMap
@@ -212,7 +216,7 @@ export function buildMark(mobile: boolean, envMap: THREE.Texture | null): Pick<H
   // a short optical path through the flat faces: the sandblast grain glints instead of
   // warping the light behind it into a hammered-glass ripple
   caps.thickness = 0.16
-  sides.envMapIntensity = 0.35
+  sides.envMapIntensity = 0.3
   // the sandblast grain: coarse enough to read in the macro shots (a few device px per
   // grain there), fine enough to mip-average away when the whole mark is on screen
   const grain = grainTexture()
@@ -479,3 +483,30 @@ export function buildReflection(geo: THREE.BufferGeometry): THREE.Mesh<THREE.Buf
 
 /** reflect about the floor plane: y → 2·FLOOR_Y − y */
 export const FLOOR_MIRROR = new THREE.Matrix4().makeTranslation(0, 2 * FLOOR_Y, 0).multiply(new THREE.Matrix4().makeScale(1, -1, 1))
+
+/** the neon tubes (world): x, z behind the mark, colour; they stand on the floor, tops out of frame */
+export const NEON = [
+  { x: -0.66, z: -1.25, color: G.neonA },
+  { x: 0.6, z: -1.45, color: G.neonB },
+]
+const NEON_TOP = 9
+
+/**
+ * Two neon tubes standing on the black mirror floor behind the mark, and
+ * their reflections. The glass buffer gets a strong coloured spill (the frost
+ * turns it into soft colour); the frame gets the tubes and a tight halo.
+ */
+export function buildNeon(isFrameTarget: (rt: THREE.WebGLRenderTarget | null) => boolean): Pick<HeroSet, 'neon' | 'neonRefl'> {
+  const neon: NeonTube[] = []
+  const neonRefl: THREE.Mesh[] = []
+  const len = NEON_TOP - FLOOR_Y
+  for (const n of NEON) {
+    const t = neonTube({ color: n.color, length: len, radius: 0.017, glowRadius: 0.1, spillRadius: 0.55, isFrameTarget })
+    t.mesh.position.set(n.x, FLOOR_Y + len / 2 + 0.012, n.z)
+    const r = t.reflection(FLOOR_Y, 0.32, 1.5)
+    r.position.set(n.x, FLOOR_Y - len / 2 - 0.012, n.z)
+    neon.push(t)
+    neonRefl.push(r)
+  }
+  return { neon, neonRefl }
+}

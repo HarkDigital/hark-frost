@@ -1,46 +1,21 @@
 import { SITE } from '../content'
-import { MARK_SVG } from '../logo/svgSource'
+import { MARK_DIAMOND, MARK_LOOPS, MARK_VIEW } from '../logo/svgSource'
 
 /*
  * The Hark mark as inline-SVG path data for the DOM layer (chrome, loader,
- * menu sheet, rotate card, fallback). Pulled from the same Illustrator source
- * the 3D geometry uses, minus the three hairline slivers. The rotated <rect>
- * diamond is baked into a plain path so it can be stroked / dash-drawn like
- * the loops.
+ * menu sheet, rotate card, fallback). The same Illustrator source the 3D
+ * geometry uses (Logo Piece (3).eps): two loops and the diamond, all plain
+ * paths, so they can be stroked / dash-drawn alike.
  *
  * Frost is monochrome: the mark is always white (currentColor). Never a
  * colour accent in it.
  */
 
-export const MARK_VIEWBOX = '0 0 1889.6 1889.9'
-export const MARK_W = 1889.6
-export const MARK_H = 1889.9
+export const MARK_VIEWBOX = `0 0 ${MARK_VIEW.w} ${MARK_VIEW.h}`
+export const MARK_W = MARK_VIEW.w
+export const MARK_H = MARK_VIEW.h
 
-function parseMark() {
-  const loops = [...MARK_SVG.matchAll(/<path d="([^"]+)"/g)].map(m => m[1]).filter(d => d.length > 200)
-
-  // <rect x y w h transform="translate(tx ty) rotate(-45)">
-  const r = MARK_SVG.match(
-    /<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)" transform="translate\(([-\d.]+) ([-\d.]+)\) rotate\(([-\d.]+)\)"/,
-  )
-  let diamond = ''
-  if (r) {
-    const [x, y, w, h, tx, ty, deg] = r.slice(1).map(Number)
-    const a = (deg * Math.PI) / 180
-    const c = Math.cos(a)
-    const s = Math.sin(a)
-    const pts = [
-      [x, y],
-      [x + w, y],
-      [x + w, y + h],
-      [x, y + h],
-    ].map(([px, py]) => [px * c - py * s + tx, px * s + py * c + ty])
-    diamond = `M${pts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L')}Z`
-  }
-  return { loops, diamond }
-}
-
-export const MARK_PATHS = parseMark()
+export const MARK_PATHS = { loops: MARK_LOOPS, diamond: MARK_DIAMOND }
 
 /** every contour of the mark (loops, then the diamond) */
 export const MARK_ALL = [...MARK_PATHS.loops, MARK_PATHS.diamond].filter(Boolean)
@@ -66,7 +41,7 @@ export function markSvg(className = '', { title }: { title?: string } = {}) {
 /**
  * The mark as a razor-thin OUTLINE (every contour stroked, no fill): the
  * menu sheet's watermark and the fallback's backdrop. Stroke width is in
- * viewBox units (1889.6 wide), so pass one that renders at ~1 CSS px.
+ * viewBox units (1889.59 wide), so pass one that renders at ~1 CSS px.
  */
 export function markOutlineSvg(className = '', strokeWidth = 4) {
   return `<svg class="${className}" viewBox="${MARK_VIEWBOX}" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><g fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linejoin="round">${MARK_ALL.map(

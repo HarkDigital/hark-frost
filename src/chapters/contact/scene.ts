@@ -16,27 +16,27 @@ import { frostedLogo, G, type FrostedLogo } from '../../kit/glass'
  *              mark's centre (uThaw = the front's radius, object units)
  *            - a thin MELT LINE of light rides the front
  *            - the transmission blur is remapped so thawed glass samples
- *              mip 0 (razor-sharp refraction of the slits and the halo) while
+ *              mip 0 (razor-sharp refraction of the neon and the halo) while
  *              the sandblast keeps its soft glow
  *            - the sandblast GATHERS light: real frosted glass scatters light
  *              from a wide cone behind it toward you, so the frosted part
  *              glows brighter than the halo it sits on (uGain) — a backlit
  *              sandblasted sign on black. Thawed glass drops the gain and
- *              shows only what's really behind it: the halo and the hairline
- *              slits, bent by its faces and polished edges.
+ *              shows only what's really behind it: the halo and the neon
+ *              tubes, bent by its faces and polished edges.
  *            - THE LAST BREATH: frost re-forms from the mark's outer edges
  *              inward (uFrost = the front's radius; frost wherever the glass
  *              lies outside it): a thin condensation haze runs ahead, then a
  *              finer, feathered crystalline front with a faint rime of light
  *              (uRime). Once it has closed the caps are exactly the landing's
  *              sandblast again, so the site ends on the frosted mark.
- *   slits  the chapter's own hairline light lines on a plane behind the mark
- *          (the world's slits are fixed around the halo; these are placed to
- *          cross the mark's strokes). Behind the sandblast they diffuse into
- *          soft bands of glow; as the glass thaws they snap back into razor
- *          lines, broken and displaced where the clear glass bends them.
- *          The plane is re-placed every frame so, seen from the camera, it is
- *          centred on the mark and 1 plane unit = 1 mark height.
+ *   slits  the chapter's two NEON tubes (the hero's pair: glacier cyan,
+ *          ultraviolet) on a plane behind the mark, placed to cross the mark's
+ *          strokes. Behind the sandblast they diffuse into soft bands of
+ *          coloured glow; as the glass thaws they snap back into crisp tubes,
+ *          broken and displaced where the clear glass bends them. The plane is
+ *          re-placed every frame so, seen from the camera, it is centred on
+ *          the mark and 1 plane unit = 1 mark height.
  */
 
 export interface ThawUniforms {
@@ -67,6 +67,13 @@ export interface ThawScene {
     uX: { value: THREE.Vector3 }
     uK: { value: THREE.Vector3 }
     uColor: { value: THREE.Color }
+    uColA: { value: THREE.Color }
+    uColB: { value: THREE.Color }
+    /** tube radius (plane units = mark heights) and the per-pass strengths (set in onBeforeRender) */
+    uR: { value: number }
+    uTube: { value: number }
+    uHalo: { value: number }
+    uSpill: { value: number }
     /** the lines' extent (plane units, y up): top, bottom — they fade out before the chrome bands */
     uSpan: { value: THREE.Vector2 }
     /** a gap cut into the lines (x0, y0, x1, y1): the sign-off sits in it */
@@ -160,28 +167,51 @@ const SLIT_VERT = /* glsl */ `
   varying vec2 vP;
   void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
 `
-// three razor lines (x positions uX, strengths uK), ~1px at any scale,
-// fading out toward the chrome bands, with a gap for the sign-off
+// NEON tubes (x positions uX, strengths uK, colours uColA / uColB / uColor):
+// each a capsule from just inside the bottom span to just inside the top one
+// (the tubes end, with dim electrode tips, before the chrome bands), split
+// into two tubes where the sign-off's gap crosses it. Per pass (uTube, uHalo,
+// uSpill): the frame shows the tubes and a tight halo, the glass buffer a
+// broad coloured spill the frost diffuses.
 const SLIT_FRAG = /* glsl */ `
-  uniform vec3 uColor, uX, uK;
-  uniform float uStrength;
+  uniform vec3 uColor, uColA, uColB, uX, uK;
+  uniform float uStrength, uR, uTube, uHalo, uSpill;
   uniform vec2 uSpan;
   uniform vec4 uGap;
   varying vec2 vP;
-  float hair(float x, float c, float px) { float d = (x - c) / px; return exp(-d * d * 1.6); }
+  float seg(vec2 p, float x, float y0, float y1) {
+    if (y1 <= y0) return 1e3; // an empty piece (the gap swallowed it)
+    return length(vec2(p.x - x, p.y - clamp(p.y, y0, y1)));
+  }
+  vec3 tube(vec2 p, float x, vec3 col, float k, float aa) {
+    float y1 = uSpan.x * 0.86;
+    float y0 = -uSpan.y * 0.86;
+    // the sign-off's gap splits the tube in two
+    bool split = x > uGap.x && x < uGap.z;
+    float d = split ? min(seg(p, x, y0, min(uGap.y, y1)), seg(p, x, max(uGap.w, y0), y1)) : seg(p, x, y0, y1);
+    float r = max(uR, aa * 0.75);
+    float body = 1.0 - smoothstep(r - aa, r + aa, d);
+    float t = clamp(d / r, 0.0, 1.0);
+    vec3 gas = mix(vec3(1.0), col, smoothstep(0.05, 0.9, t)) * (1.0 - 0.45 * t * t);
+    // electrode tips: the last few percent of each end glows less
+    float e = min(y1 - p.y, p.y - y0);
+    if (split) e = min(e, max(uGap.y - p.y, p.y - uGap.w));
+    float lit = smoothstep(0.0, 0.05, e);
+    float halo = exp(-d * d / 0.0018);
+    float spill = exp(-d * d / 0.06);
+    return k * (gas * body * (0.25 + 0.75 * lit) * uTube + col * (halo * uHalo + spill * uSpill) * mix(0.5, 1.0, lit));
+  }
   void main() {
-    float px = max(fwidth(vP.x), 1e-5);
-    float l = uK.x * hair(vP.x, uX.x, px) + uK.y * hair(vP.x, uX.y, px) + uK.z * hair(vP.x, uX.z, px);
-    float top = 1.0 - smoothstep(uSpan.x * 0.45, uSpan.x, vP.y);
-    float bot = 1.0 - smoothstep(uSpan.y * 0.45, uSpan.y, -vP.y);
-    float soft = 0.02;
-    float gx = smoothstep(uGap.x - soft, uGap.x, vP.x) * (1.0 - smoothstep(uGap.z, uGap.z + soft, vP.x));
-    float gy = smoothstep(uGap.y - soft, uGap.y, vP.y) * (1.0 - smoothstep(uGap.w, uGap.w + soft, vP.y));
-    gl_FragColor = vec4(uColor * (l * top * bot * (1.0 - gx * gy) * uStrength), 1.0);
+    // one pixel in plane units, from the plane coordinates themselves (a derivative of the
+    // capsule distance breaks along the quad's diagonal)
+    float aa = max(length(fwidth(vP)) * 0.75, 1e-5);
+    vec3 c = tube(vP, uX.x, uColA, uK.x, aa) + tube(vP, uX.y, uColB, uK.y, aa);
+    if (uK.z > 0.0) c += tube(vP, uX.z, uColor, uK.z, aa);
+    gl_FragColor = vec4(c * uStrength, 1.0);
   }
 `
 
-export function buildScene(): ThawScene {
+export function buildScene(isFrameTarget: (rt: THREE.WebGLRenderTarget | null) => boolean): ThawScene {
   const rig = new THREE.Group()
   const turn = new THREE.Group()
   rig.add(turn)
@@ -206,12 +236,18 @@ export function buildScene(): ThawScene {
   }
   patchThaw(logo.caps, thaw)
 
-  // ---- hairline slits behind the mark
+  // ---- two neon tubes behind the mark (the hero's pair: glacier cyan, ultraviolet)
   const slitU = {
     uStrength: { value: 0 },
-    uX: { value: new THREE.Vector3(-0.21, 0.27, 0.86) },
-    uK: { value: new THREE.Vector3(1, 0.75, 0.4) },
+    uX: { value: new THREE.Vector3(-0.23, 0.29, 0.86) },
+    uK: { value: new THREE.Vector3(1, 1, 0) },
     uColor: { value: new THREE.Color('#f2f6ff') },
+    uColA: { value: new THREE.Color(G.neonA) },
+    uColB: { value: new THREE.Color(G.neonB) },
+    uR: { value: 0.0075 },
+    uTube: { value: 0 },
+    uHalo: { value: 0 },
+    uSpill: { value: 0 },
     uSpan: { value: new THREE.Vector2(0.8, 0.8) },
     uGap: { value: new THREE.Vector4(0, 9, 0, 9) },
   }
@@ -230,6 +266,15 @@ export function buildScene(): ThawScene {
   )
   slits.position.z = -SLIT_DEPTH
   slits.renderOrder = -5
+  // the frame: the tubes + a tight halo; the glass buffer: a broad spill for the frost to diffuse
+  slits.onBeforeRender = renderer => {
+    const rt = renderer.getRenderTarget()
+    const main = rt === null || isFrameTarget(rt as THREE.WebGLRenderTarget)
+    slitU.uTube.value = 3.2
+    slitU.uHalo.value = main ? 0.32 : 1.1
+    slitU.uSpill.value = main ? 0.03 : 0.42
+    ;(slits.material as THREE.ShaderMaterial).uniformsNeedUpdate = true
+  }
   rig.add(slits)
 
   return { rig, turn, logo, thaw, slits, slitU }

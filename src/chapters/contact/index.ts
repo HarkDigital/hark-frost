@@ -16,7 +16,7 @@ import './contact.css'
  * glowing like a backlit sandblasted sign on black. As you scroll, its frost
  * THAWS from the centre outward: a noise-edged front with a thin melt line
  * of light travels across the face, and behind it the glass is crystal clear,
- * refracting the backlight halo and the hairline slits, its polished bevels
+ * refracting the backlight halo and the two neon tubes, its polished bevels
  * razor sharp. Then one last breath: frost re-forms from the mark's edges
  * inward, a haze running ahead of a fine crystalline front, until the mark
  * is the landing's sandblast again, the sharpest frosted mark on black, with
@@ -26,8 +26,8 @@ import './contact.css'
  *   0.06–0.30  it turns toward you, the halo swells, the card comes into focus
  *   0.30       landing / heading stop: frosted mark + settled card and CTA
  *   0.31–0.64  THE THAW: centre outward, the melt line riding the front
- *   0.45–0.64  the halo and slits come through the clearing glass
- *   0.64–0.72  crystal: the clear mark bends the slits
+ *   0.45–0.64  the halo and the neon come through the clearing glass
+ *   0.64–0.72  crystal: the clear mark bends the neon tubes
  *   0.72–0.90  THE LAST BREATH: frost re-forms from the edges inward; the mark
  *              turns back toward you and makes room for the sign-off, which
  *              comes into focus beneath it (0.82–0.90)
@@ -140,7 +140,7 @@ export default function create(): Chapter {
       sign = rise(el('p', 'hud-h2 ct-sign', undefined, ctx.stage), `${words.join(' ')} <em>${last}</em>`)
       sign.setAttribute('aria-hidden', 'true')
       await nextFrame()
-      set = buildScene()
+      set = buildScene(rt => ctx.post.isFrameTarget(rt))
       group.add(set.rig)
       await nextFrame()
     },
@@ -218,7 +218,7 @@ export default function create(): Chapter {
       // Motion off holds a still frame: keep drawing while these settle
       if (copied > 0 || Math.abs(hoverAmt - hoverTo) > 0.004) window.__hark?.engine?.wake()
 
-      // ---- the world: black, one backlight halo behind the mark, hairline slits
+      // ---- the world: black, one backlight halo behind the mark (the chapter draws its own neon)
       const wp = ctx.world.params
       const aspect = W / H
       const mx = ((cx / W) * 2 - 1) * aspect
@@ -266,7 +266,7 @@ export default function create(): Chapter {
           signY = y
           sign.style.transform = `translate3d(${x}px, ${y}px, 0)`
         }
-        // the slits part around it (plane y is up, screen y is down)
+        // the neon parts around it: each tube splits in two (plane y is up, screen y is down)
         const gy = -(sy + signH / 2 - mcy) / unit
         const gh = ((signH / 2 + 8) * sv) / unit
         const gw = (signW / 2 + 24) / unit
@@ -275,7 +275,7 @@ export default function create(): Chapter {
       setRise(sign, sv > 0.2)
       reveal(sign, sv, 0)
 
-      // the slits fade out before the chrome bands, and on portrait before the
+      // the tubes end before the chrome bands, and on portrait before the
       // card (under lowfx the card has no blur, so they'd cut across its copy)
       if (lay) {
         const bottom = lay.portrait ? lay.panel.y0 - 10 : lay.band.y1
