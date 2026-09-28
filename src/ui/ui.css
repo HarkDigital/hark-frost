@@ -65,10 +65,11 @@
 .wm-tag {
   display: block;
   margin-top: 5px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 9.5px;
   line-height: 1;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.088em;
   text-transform: uppercase;
   white-space: nowrap;
   color: var(--fr-text-2);
@@ -244,9 +245,10 @@
   align-items: center;
   height: 36px;
   padding: 0 12px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.083em;
   text-transform: uppercase;
   text-decoration: none;
   color: rgba(255, 255, 255, 0.86);
@@ -326,9 +328,10 @@
   gap: 10px;
   height: var(--ch-h);
   padding: 0 16px 0 18px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.083em;
   text-transform: uppercase;
   border-radius: 999px;
   cursor: pointer;
@@ -371,9 +374,10 @@
   gap: 9px;
   height: 38px;
   padding: 0 15px 0 13px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 10.5px;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.083em;
   text-transform: uppercase;
   border-radius: 999px;
   cursor: pointer;
@@ -484,9 +488,10 @@
   gap: 0;
   margin: 0 0 0;
   padding-right: 6px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 10.5px;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.083em;
   text-transform: uppercase;
   white-space: nowrap;
   color: #ffffff;
@@ -512,7 +517,8 @@
   text-transform: none;
 }
 .ch-read-l::before {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-style: normal;
   font-size: 10.5px;
 }
@@ -582,9 +588,10 @@
   right: 0;
   bottom: calc(100% + 14px);
   padding: 11px 18px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.077em;
   text-transform: uppercase;
   text-decoration: none;
   white-space: nowrap;
@@ -740,9 +747,10 @@ html.menu-open #stages {
   color: #ffffff;
 }
 .ch-ml-n {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 10.5px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.066em;
   color: var(--fr-text-2);
 }
 .ch-ml-name {
@@ -753,9 +761,10 @@ html.menu-open #stages {
   letter-spacing: -0.045em;
 }
 .ch-ml-lab {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 10px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.077em;
   text-transform: uppercase;
   color: var(--fr-text-2);
 }
@@ -798,9 +807,10 @@ html.menu-open #stages {
 }
 .ch-menu-mail {
   margin: 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 12px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.033em;
 }
 .ch-menu-mail a {
   color: #ffffff;
@@ -1068,9 +1078,10 @@ html.menu-open #stages {
 }
 .ld-pct {
   margin: 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 10.5px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.121em;
   color: rgba(255, 255, 255, 0.74);
   font-variant-numeric: tabular-nums;
 }
@@ -1331,9 +1342,10 @@ html.no-webgl #stages {
   align-items: center;
   min-height: 40px;
   padding: 0 10px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.083em;
   text-transform: uppercase;
   color: #ffffff;
   text-decoration: none;
@@ -1383,9 +1395,10 @@ html.no-webgl #stages {
   align-content: flex-start;
   gap: 6px 10px;
   margin: 6px 0 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 10.5px;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.083em;
   text-transform: uppercase;
   color: var(--fr-text-2);
 }
@@ -1466,9 +1479,10 @@ html.no-webgl #stages {
 }
 .fallback-copy .sr-kicker {
   max-width: none;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.083em;
   text-transform: uppercase;
   color: #ffffff;
 }
@@ -1535,18 +1549,20 @@ html.no-webgl #stages {
   position: absolute;
   left: 0;
   top: 23px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.066em;
   color: var(--fr-text-2);
 }
 .fb-sec--services li h3 span {
   color: #ffffff;
 }
 .fb-sec--services li p:last-child {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
 }
 /* voices: big quotes */
@@ -1568,25 +1584,28 @@ html.no-webgl #stages {
   max-width: 44ch;
 }
 .fallback-copy figcaption {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.066em;
   text-transform: uppercase;
 }
 /* process stats */
 .fb-sec--process ul li {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 12px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.044em;
   text-transform: uppercase;
 }
 /* contact */
 .fallback-copy button {
   margin-left: 6px;
   padding: 7px 12px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
   color: #ffffff;
   background: var(--fr-grain), var(--fr-chip);
@@ -1597,9 +1616,10 @@ html.no-webgl #stages {
 }
 .fallback-copy [data-copy-status]:not(:empty) {
   margin-left: 8px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
   color: #ffffff;
 }
@@ -1612,9 +1632,10 @@ html.no-webgl #stages {
   gap: 14px;
   padding: 40px 0 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.14);
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.077em;
   text-transform: uppercase;
   color: var(--fr-text-2);
 }

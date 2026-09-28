@@ -34,7 +34,8 @@
 .ph-list a {
   color: var(--fg);
   text-decoration: none;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 12px;
 }
 .ph-list a:hover,
@@ -45,7 +46,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px 14px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 12px;
 }
 .ph-links a,

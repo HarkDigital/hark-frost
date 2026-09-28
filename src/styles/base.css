@@ -5,7 +5,7 @@
    where it makes frost glow. The page is frosted glass on black — panels
    with a soft sandblasted fill, a razor-thin bright top edge and a
    light-catching rim; white type in Schibsted Grotesk, italic accents, and
-   Fragment Mono labels. Monochrome on purpose: the Hark brand is the
+   bold tracked-caps labels in the same grotesk. Monochrome on purpose: the Hark brand is the
    monochrome mark (no green). Headlines come INTO FOCUS (blur → sharp).
 
    STRUCTURE (keep): #gl / #track / #stages / .stage / #chrome / #loader,
@@ -50,7 +50,9 @@
 
   --font-display: 'Schibsted Grotesk Variable', 'Schibsted Grotesk', system-ui, sans-serif;
   --font-sans: 'Schibsted Grotesk Variable', 'Schibsted Grotesk', system-ui, sans-serif;
-  --font-mono: 'Fragment Mono', ui-monospace, monospace;
+  /* labels, eyebrows, tags, numbers: the same grotesk, heavy and tracked caps (no monospace anywhere) */
+  --font-label: 'Schibsted Grotesk Variable', 'Schibsted Grotesk', system-ui, sans-serif;
+  --label-weight: 700;
 
   /* STRUCTURE: the persistent chrome owns these bands (+ notch insets) */
   --gutter: max(clamp(16px, 3.4vw, 48px), env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
@@ -235,9 +237,10 @@ a {
 /* ---------------- HUD vocabulary ---------------- */
 
 .hud-label {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
   color: var(--fg-muted);
   line-height: 1.5;
@@ -248,9 +251,10 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11.5px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.077em;
   text-transform: uppercase;
   color: var(--fg);
   margin: 0;
@@ -331,9 +335,10 @@ a {
   list-style: none;
 }
 .hud-tag {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 10.5px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.033em;
   text-transform: uppercase;
   color: var(--fg);
   padding: 5px 10px;
@@ -449,7 +454,8 @@ a {
 }
 
 .hud-mono {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
 }
 
 /* ---------------- 3D-anchored callouts (src/core/dom.ts) ---------------- */
@@ -488,9 +494,10 @@ a {
   left: 0;
   top: 0;
   white-space: nowrap;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.044em;
   text-transform: uppercase;
   color: var(--fg);
   line-height: 1.5;
@@ -585,9 +592,10 @@ a {
   white-space: normal;
   text-align: center;
   line-height: 1.35;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 12px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.044em;
   text-transform: uppercase;
   text-decoration: none;
   color: var(--ink);
@@ -611,8 +619,8 @@ a {
   z-index: 40;
   margin: 0;
   white-space: nowrap;
-  font: 500 12px/1 var(--font-mono);
-  letter-spacing: 0.08em;
+  font: 500 12px/1 var(--font-label);
+  letter-spacing: 0.044em;
   text-transform: uppercase;
   color: var(--ink);
   background: var(--paper-2);
@@ -627,8 +635,8 @@ a {
   top: calc(var(--safe-top) + 64px);
   transform: translateX(-50%);
   z-index: 40;
-  font: 500 12px/1 var(--font-mono);
-  letter-spacing: 0.08em;
+  font: 500 12px/1 var(--font-label);
+  letter-spacing: 0.044em;
   text-transform: uppercase;
   color: var(--ink);
   background: var(--signal);
@@ -649,9 +657,10 @@ a {
   left: 50%;
   z-index: 120;
   transform: translate(-50%, -160%);
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 12px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.044em;
   text-transform: uppercase;
   text-decoration: none;
   color: var(--ink);

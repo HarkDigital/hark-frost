@@ -1,7 +1,6 @@
-// Fonts: Schibsted Grotesk (display + body, incl. italics) and Fragment Mono (labels).
+// Fonts: Schibsted Grotesk for everything (display, body, italics, and bold labels).
 import '@fontsource-variable/schibsted-grotesk'
 import '@fontsource-variable/schibsted-grotesk/wght-italic.css'
-import '@fontsource/fragment-mono/400.css'
 import './styles/base.css'
 import './ui/ui.css'
 

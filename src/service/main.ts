@@ -1,7 +1,6 @@
-// Fonts: Schibsted Grotesk (display + body, incl. italics) and Fragment Mono (labels).
+// Fonts: Schibsted Grotesk for everything (display, body, italics, and bold labels).
 import '@fontsource-variable/schibsted-grotesk'
 import '@fontsource-variable/schibsted-grotesk/wght-italic.css'
-import '@fontsource/fragment-mono/400.css'
 import '../styles/base.css'
 import '../ui/ui.css'
 import './service.css'
@@ -16,7 +15,7 @@ import { SERVICE_CONTENT } from './data/content'
  * A SERVICE PAGE — one per service, at <base>services/<slug>/ (vite.config.ts
  * writes a copy of service.html per slug). The copy is the classic 2026
  * site's service page, verbatim (src/service/data), in Frost's language:
- * black, frosted glass panels, mono labels, the two neon tubes.
+ * black, frosted glass panels, bold caps labels, the two neon tubes.
  *
  *   top       the brand tile (home) + Work · Services · Contact + Start a project
  *   hero      the service's etched plate between the neon (src/service/hero.ts,

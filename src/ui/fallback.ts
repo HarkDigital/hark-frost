@@ -9,7 +9,7 @@ import { releaseInert } from './inert'
  * The plain HTML version: for browsers without WebGL2, the "Read as a page"
  * link (?read), and the last resort if boot fails. Every chapter's copy, in
  * story order (CHAPTERS), visible, as a clean black typographic page: big
- * Schibsted type on black, Fragment Mono kickers, hairline rules, and the one
+ * Schibsted type on black, bold caps kickers, hairline rules, and the one
  * frosted object — the Hark mark as a razor outline with a soft light behind
  * it at the top of the page (decorative). Same copy as the live site,
  * verbatim, from srContent (buildChapterCopy). Styled by the .fb-* rules in

@@ -4,7 +4,7 @@ import type { Engine } from './Engine'
 export function mountDebug(engine: Engine) {
   const box = document.createElement('div')
   box.style.cssText =
-    'position:fixed;left:8px;bottom:8px;z-index:200;font:11px/1.5 ui-monospace,monospace;color:#e6e9ee;background:rgba(0,0,0,.7);padding:6px 8px;pointer-events:none;white-space:pre'
+    'position:fixed;left:8px;bottom:8px;z-index:200;font:600 11px/1.5 Schibsted Grotesk Variable,system-ui,sans-serif;color:#e6e9ee;background:rgba(0,0,0,.7);padding:6px 8px;pointer-events:none;white-space:pre'
   document.body.appendChild(box)
   let frames = 0
   let acc = 0

@@ -3,7 +3,7 @@ import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
 import { G, flattenCaps, frosted, polished, smoothSides } from '../../kit/glass'
 import { placeholderTexture } from '../../kit/images'
 import type { WorkItem } from '../../content'
-import { MONO, SANS, spaced, textPlate, type TextPlate } from './text'
+import { LABEL, SANS, spaced, textPlate, type TextPlate } from './text'
 
 /*
  * The Collection set: a black gallery. Six tall sandblasted glass panels
@@ -561,15 +561,15 @@ export function buildGallery(featured: WorkItem[], rest: WorkItem[], mobile: boo
     // the etched label along the foot: number + name (+ PREVIEW for a pre-launch build)
     const pre = isPreview(w.url)
     const label = textPlate(1600, 72, PW - 0.26, (g, pw, ph) => {
-      g.font = `400 30px ${MONO}`
+      g.font = `700 30px ${LABEL}`
       g.globalAlpha = 0.55
       const nw = spaced(g, `${pad(k + 1)}`, 2, ph / 2, 4)
       g.globalAlpha = 0.95
       const x = nw + 34
-      const tw = spaced(g, w.name.toUpperCase(), x, ph / 2, 6)
+      const tw = spaced(g, w.name.toUpperCase(), x, ph / 2, 3.5)
       if (pre) {
         g.globalAlpha = 0.55
-        spaced(g, '· PREVIEW', x + tw + 22, ph / 2, 6)
+        spaced(g, '· PREVIEW', x + tw + 22, ph / 2, 3.5)
       }
       void pw
     })
@@ -649,7 +649,7 @@ export function buildGallery(featured: WorkItem[], rest: WorkItem[], mobile: boo
     const n = featured.length + j + 1
     const plateW = BAR_W - BAND_W - 0.19
     const label = textPlate(1280, 128, plateW, (g, pw, ph) => {
-      g.font = `400 40px ${MONO}`
+      g.font = `700 40px ${LABEL}`
       g.globalAlpha = 0.6
       const nw = spaced(g, pad(n), 2, ph / 2 + 2, 3)
       g.globalAlpha = 1

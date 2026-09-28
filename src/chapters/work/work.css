@@ -35,9 +35,10 @@
   flex-wrap: wrap;
   gap: 8px 14px;
   margin: 4px 0 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11.5px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.077em;
   text-transform: uppercase;
   color: var(--fg-muted);
 }
@@ -117,9 +118,10 @@
   margin: 0;
 }
 .stage-work .wk-num {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11.5px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.066em;
   color: var(--fg);
   padding: 4px 10px;
   border-radius: 999px;
@@ -133,9 +135,10 @@
 }
 /* pre-launch build: an outlined silver chip (never "live") */
 .stage-work .wk-badge {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 10.5px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.066em;
   text-transform: uppercase;
   color: var(--fg);
   padding: 3px 9px;
@@ -205,9 +208,10 @@
     box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage-work .wk-no {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.033em;
   color: var(--fg-faint);
 }
 .stage-work .wk-rname {
@@ -218,16 +222,18 @@
   line-height: 1.3;
 }
 .stage-work .wk-pre {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 10px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.044em;
   text-transform: uppercase;
   color: var(--fg-muted);
 }
 .stage-work .wk-rind {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 10.5px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.044em;
   text-transform: uppercase;
   color: var(--fg-muted);
   text-align: right;

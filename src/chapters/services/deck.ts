@@ -170,7 +170,7 @@ export function buildDeck(mobile: boolean, envMap: THREE.Texture | null): Deck {
     atlas.draw()
     tex.needsUpdate = true
   }
-  document.fonts?.load("400 24px 'Fragment Mono'").then(redraw, () => {})
+  document.fonts?.load("700 24px 'Schibsted Grotesk Variable'").then(redraw, () => {})
 
   const column = new THREE.Group()
   const plates: Plate[] = []

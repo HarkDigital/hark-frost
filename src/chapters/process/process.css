@@ -59,10 +59,10 @@
 /* the step number: mono, silver, set on the cap height */
 .stage-process .pr-title em {
   font-style: normal;
-  font-family: var(--font-mono);
-  font-weight: 400;
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 0.5em;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.011em;
   vertical-align: 0.5em;
 }
 .stage-process .pr-text {
@@ -117,9 +117,10 @@
 }
 .stage-process .pr-name {
   display: block;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 10.5px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.044em;
   text-transform: uppercase;
   color: var(--fg-faint);
   white-space: nowrap;

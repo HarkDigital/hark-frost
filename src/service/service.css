@@ -75,9 +75,10 @@ body.svc {
   height: var(--ch-h);
   padding: 0 18px;
   border-radius: 999px;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.077em;
   text-transform: uppercase;
   text-decoration: none;
   color: var(--paper);
@@ -564,9 +565,10 @@ body.svc {
   align-items: baseline;
   gap: 12px;
   padding: 8px 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 12px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.066em;
   text-transform: uppercase;
   text-decoration: none;
   color: var(--fg-muted);

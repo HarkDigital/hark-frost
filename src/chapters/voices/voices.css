@@ -70,9 +70,10 @@
 }
 .stage-voices .vc-count {
   margin: 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.077em;
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
 }

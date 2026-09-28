@@ -9,7 +9,7 @@ import type { Testimonial } from '../../content'
  *   Andrew       the client's NAME, two lines, Schibsted Grotesk
  *   Fabbri
  *   ──           a short etched rule
- *   FABBRI BUILDERS   the company, Fragment Mono caps, tracked
+ *   FABBRI BUILDERS   the company, bold Schibsted Grotesk caps, tracked
  *
  * Drawn once per plaque on a canvas the size of the plaque's face, then
  * packed into a small RG texture (half the memory of a CanvasTexture):
@@ -23,7 +23,9 @@ import type { Testimonial } from '../../content'
  */
 
 const DISPLAY = "'Schibsted Grotesk Variable', 'Schibsted Grotesk', system-ui, sans-serif"
-const MONO = "'Fragment Mono', ui-monospace, monospace"
+/** the company label: the same grotesk, bold (no monospace anywhere) */
+const LABEL = DISPLAY
+const LABEL_WEIGHT = 700
 const NAME_WEIGHT = 560
 const QUOTE_WEIGHT = 500
 
@@ -41,7 +43,7 @@ export function loadEngraveFonts(): Promise<boolean> {
   if (typeof document === 'undefined' || !document.fonts?.load) return (fontsPromise = Promise.resolve(false))
   fontsPromise = Promise.all([
     document.fonts.load(`${NAME_WEIGHT} 100px ${DISPLAY}`, 'Aa“'),
-    document.fonts.load(`400 30px ${MONO}`, 'AB'),
+    document.fonts.load(`${LABEL_WEIGHT} 30px ${LABEL}`, 'AB'),
   ]).then(
     faces => faces.every(f => f.length > 0),
     () => false,
@@ -83,7 +85,7 @@ function spaced(g: CanvasRenderingContext2D, text: string, x: number, y: number,
 
 /** a label that fits `maxW`: one line if it can, else two balanced lines, shrinking if it must */
 function fitLabel(g: CanvasRenderingContext2D, text: string, size: number, maxW: number, trackEm: number) {
-  const setSize = (s: number) => (g.font = `400 ${s}px ${MONO}`)
+  const setSize = (s: number) => (g.font = `${LABEL_WEIGHT} ${s}px ${LABEL}`)
   setSize(size)
   if (spacedWidth(g, text, size * trackEm) <= maxW) return { lines: [text], size }
   const words = text.split(' ')
@@ -175,15 +177,15 @@ export function buildEngravings(list: Testimonial[], lay: EngraveLayout): { item
 
     const ops: ((c: string) => void)[] = []
 
-    // ---- the company (bottom), tracked mono caps; wraps to two lines if long
+    // ---- the company (bottom), tracked bold caps; wraps to two lines if long
     const coSize = Math.round(3.3 * u)
-    const track = 0.16
+    const track = 0.1
     const co = fitLabel(g, t.company.toUpperCase(), coSize, maxW, track)
     const coLine = co.size * 1.5
     const coBase = bottom - 9.5 * u
     ops.push(c => {
       g.fillStyle = c
-      g.font = `400 ${co.size}px ${MONO}`
+      g.font = `${LABEL_WEIGHT} ${co.size}px ${LABEL}`
       co.lines.forEach((l, k) => spaced(g, l, mx, coBase - (co.lines.length - 1 - k) * coLine, co.size * track))
     })
     const coTop = coBase - (co.lines.length - 1) * coLine - co.size * 0.8

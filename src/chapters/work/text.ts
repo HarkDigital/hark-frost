@@ -3,11 +3,12 @@ import * as THREE from 'three'
 /*
  * Etched text for the Collection: the engraved labels on the frosted panels
  * and on the nine directory bars. Canvas planes (white glyphs, alpha), drawn
- * just in front of a glass face; repainted once Fragment Mono / Schibsted
- * Grotesk have actually loaded so the glyphs are the real faces.
+ * just in front of a glass face; repainted once Schibsted Grotesk (bold
+ * labels, regular names) has actually loaded so the glyphs are the real faces.
  */
 
-export const MONO = "'Fragment Mono', ui-monospace, monospace"
+/** the labels: the site grotesk, set bold (no monospace anywhere) */
+export const LABEL = "'Schibsted Grotesk Variable', 'Schibsted Grotesk', system-ui, sans-serif"
 export const SANS = "'Schibsted Grotesk Variable', 'Schibsted Grotesk', system-ui, sans-serif"
 
 let fontsPromise: Promise<void> | null = null
@@ -18,7 +19,7 @@ export function fontsReady(): Promise<void> {
   const f = typeof document !== 'undefined' ? document.fonts : undefined
   if (!f || typeof f.load !== 'function') return (fontsPromise = Promise.resolve())
   fontsPromise = Promise.race([
-    Promise.all([f.load(`400 48px ${MONO}`), f.load(`560 48px ${SANS}`)]).then(() => undefined),
+    Promise.all([f.load(`700 48px ${LABEL}`), f.load(`560 48px ${SANS}`)]).then(() => undefined),
     new Promise<void>(r => window.setTimeout(r, 5000)),
   ]).catch(() => undefined)
   return fontsPromise

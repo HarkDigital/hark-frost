@@ -212,7 +212,7 @@ export interface Atlas {
   canvas: HTMLCanvasElement
   cellW: number
   cellH: number
-  /** redraw (after the mono web font loads) */
+  /** redraw (after the label web font loads) */
   draw: () => void
   /** uv rectangle of cell i: [u0, v0, u1, v1] (v up, CanvasTexture flipY) */
   rect: (i: number) => [number, number, number, number]
@@ -228,7 +228,8 @@ export function buildAtlas(cellW: number, cellH: number, weight = 1): Atlas {
   canvas.width = cellW * COLS
   canvas.height = cellH * ROWS
   const g = canvas.getContext('2d')!
-  const mono = "'Fragment Mono', ui-monospace, monospace"
+  // the labels: the site grotesk, bold (no monospace anywhere)
+  const label = "'Schibsted Grotesk Variable', 'Schibsted Grotesk', system-ui, sans-serif"
 
   const draw = () => {
     g.globalCompositeOperation = 'source-over'
@@ -265,15 +266,16 @@ export function buildAtlas(cellW: number, cellH: number, weight = 1): Atlas {
       g.textBaseline = 'alphabetic'
       g.textAlign = 'left'
       g.fillStyle = 'rgb(235,0,0)'
-      g.font = `400 ${Math.round(6.4 * u)}px ${mono}`
+      g.font = `700 ${Math.round(6.4 * u)}px ${label}`
       spaced(g, svc.num, m + 3.2 * u, m + 9.6 * u, 0.2 * u)
+      const numW = [...svc.num].reduce((w, ch) => w + g.measureText(ch).width + 0.2 * u, 0)
       g.fillStyle = 'rgb(200,0,0)'
-      g.font = `400 ${Math.round(3.5 * u)}px ${mono}`
-      spaced(g, svc.title.toUpperCase(), m + 3.2 * u, cellH - m - 2.6 * u, 0.62 * u)
+      g.font = `700 ${Math.round(3.5 * u)}px ${label}`
+      spaced(g, svc.title.toUpperCase(), m + 3.2 * u, cellH - m - 2.6 * u, 0.36 * u)
       // "/ 11" next to the number, fainter
       g.fillStyle = 'rgb(120,0,0)'
-      g.font = `400 ${Math.round(3.5 * u)}px ${mono}`
-      spaced(g, `/ ${String(n).padStart(2, '0')}`, m + 3.2 * u + 10.6 * u, m + 9.6 * u, 0.4 * u)
+      g.font = `700 ${Math.round(3.5 * u)}px ${label}`
+      spaced(g, `/ ${String(n).padStart(2, '0')}`, m + 3.2 * u + numW + 2.2 * u, m + 9.6 * u, 0.3 * u)
 
       // ---- the icon: a soft glow pass (G), then the crisp line (R)
       const gs = (cellH * 0.44) / 100 // icon box ≈ 44% of the cell height

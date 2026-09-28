@@ -196,9 +196,10 @@
   margin-top: clamp(14px, 1.4vw, 20px);
 }
 .stage-contact .ct-top {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 11px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
   line-height: 1.5;
   min-height: 24px;
@@ -207,9 +208,10 @@
 .stage-contact .ct-legal {
   margin: 0;
   text-wrap: balance;
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
+  font-weight: var(--label-weight);
   font-size: 10.5px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.044em;
   text-transform: uppercase;
   line-height: 1.6;
   color: var(--fg-faint);
