@@ -48,7 +48,12 @@ const BEVEL = 0
  * the frost (roughness): translucent — the neon and the light behind read
  * through it as soft shapes — rather than milky
  */
-export const FROST = 0.22
+export const FROST = 0.36
+/**
+ * how far the frost spreads the light behind it, past three's own blur for
+ * that roughness: light through the glass arrives as soft washes, not lines
+ */
+const DIFFUSE = 1.55
 export const FRONT_Z = DEPTH / 2 + BEVEL
 /**
  * the thaw window's path across the front cap (mark units): down the centre of
@@ -110,7 +115,7 @@ function crispTransmissionChunk(): string | null {
   }
   return chunk.replace(
     LOD_RE,
-    `float lod = log2( transmissionSamplerSize.x ) * applyIorToRoughness( roughness, ior );
+    `float lod = log2( transmissionSamplerSize.x ) * applyIorToRoughness( roughness, ior ) * ${DIFFUSE.toFixed(2)};
 		vec4 crispT = textureLod( transmissionSamplerMap, fragCoord.xy, 0.0 );
 		vec4 softT = textureBicubic( transmissionSamplerMap, fragCoord.xy, lod );
 		return mix( crispT, softT, smoothstep( 0.9, 1.8, lod ) );`,

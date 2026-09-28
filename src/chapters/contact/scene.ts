@@ -87,8 +87,8 @@ export const SLIT_DEPTH = 1.4
 
 /** the mark's thaw front reaches past its farthest corner at this radius (object units) */
 export const THAW_OUTER = 0.66
-/** the frost: light enough to be translucent (what's behind reads as soft shapes), not milky */
-export const FROST = 0.22
+/** the frost: translucent (not milky), and it spreads the light behind into soft washes (see the lod remap) */
+export const FROST = 0.36
 /** how much extra light the frost gathers from behind (kept low: translucent, not a lamp) */
 export const GAIN = 1.2
 
@@ -160,7 +160,7 @@ function patchThaw(m: THREE.MeshPhysicalMaterial, u: ThawUniforms) {
     if (LOD_RE.test(chunk)) {
       frag = frag.replace(
         '#include <transmission_pars_fragment>',
-        chunk.replace(LOD_RE, 'float lod = log2( transmissionSamplerSize.x ) * max( applyIorToRoughness( roughness, ior ) - 0.075, 0.0 ) * 1.12;'),
+        chunk.replace(LOD_RE, 'float lod = log2( transmissionSamplerSize.x ) * max( applyIorToRoughness( roughness, ior ) - 0.075, 0.0 ) * 1.75;'),
       )
     } else if (import.meta.env.DEV) console.warn('[contact] three transmission chunk changed; thawed glass keeps the default blur')
     shader.fragmentShader = frag
@@ -276,8 +276,8 @@ export function buildScene(isFrameTarget: (rt: THREE.WebGLRenderTarget | null) =
     const rt = renderer.getRenderTarget()
     const main = rt === null || isFrameTarget(rt as THREE.WebGLRenderTarget)
     slitU.uTube.value = 3.2
-    slitU.uHalo.value = main ? 0.32 : 0.8
-    slitU.uSpill.value = main ? 0.03 : 0.16
+    slitU.uHalo.value = main ? 0.32 : 0.4
+    slitU.uSpill.value = main ? 0.03 : 0.28
     ;(slits.material as THREE.ShaderMaterial).uniformsNeedUpdate = true
   }
   rig.add(slits)

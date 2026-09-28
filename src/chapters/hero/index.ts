@@ -437,8 +437,8 @@ export default function create(): Chapter {
         n.k.main.glow = 0.34
         n.k.main.spill = 0.035
         n.k.trans.tube = 3.2
-        n.k.trans.glow = 0.9 * lerp(1, 0.6, macro)
-        n.k.trans.spill = 0.16 * lerp(1, 0.55, macro)
+        n.k.trans.glow = 0.4 * lerp(1, 0.6, macro)
+        n.k.trans.spill = 0.28 * lerp(1, 0.55, macro)
       }
 
       // ---- floor pool + reflection
