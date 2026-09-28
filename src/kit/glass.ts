@@ -277,7 +277,8 @@ export function frostedLogo(
   // the bevel rolls INWARD from the true outline: its widest point is the
   // artwork's edge, so the curl channels and holes keep their drawn size
   // (an outward bevel closed the channels and made the loops read as rings)
-  const geo = extrudeInset(shapes, { depth, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelSegments: mobile ? 5 : 9 })
+  // (bevel 0: straight walls, sharp edges)
+  const geo = extrudeInset(shapes, { depth, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelSegments: bevel > 0 ? (mobile ? 5 : 9) : 0 })
   // non-indexed (like ExtrudeGeometry): creased normals keep its material groups
   // (0 = front/back caps, 1 = sides + bevel)
   const g2 = toCreasedNormals(geo, Math.PI / 4.5)

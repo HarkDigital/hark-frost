@@ -4,10 +4,10 @@ import { G, edgeGlow, frostedLogo, neonTube, type FrostedLogo, type NeonTube, fl
 /*
  * FROST — the hero set. A black gallery with one object in it.
  *
- *   the mark       kit frostedLogo(), FULLY frosted: sandblasted caps and a
- *                  satin-frosted rounded bevel (no polished rim). The outline
- *                  is the Illustrator master's, and the bevel rolls inward
- *                  from it, so the silhouette is the logo exactly. The caps
+ *   the mark       kit frostedLogo(), FULLY frosted and SHARP: a straight-
+ *                  walled slab cut to the Illustrator master's outline (no
+ *                  bevel), frosted faces and satin-frosted walls meeting at
+ *                  crisp edges, so the silhouette is the logo exactly. The caps
  *                  are smooth frosted glass (no grain texture) with a moving THAW
  *                  window — a clear, crisp spot with a crystalline melt front,
  *                  injected into the roughness (uniforms only, one program,
@@ -38,9 +38,12 @@ import { G, edgeGlow, frostedLogo, neonTube, type FrostedLogo, type NeonTube, fl
 export const MARK_S = 2.2
 /** the black mirror floor, a little below the mark */
 export const FLOOR_Y = -MARK_S / 2 - 0.36
-/** the mark's extrusion (mark units): the front cap sits at z = DEPTH / 2 + BEVEL */
-const DEPTH = 0.2
-const BEVEL = 0.024
+/**
+ * the mark's extrusion (mark units): a straight-walled slab, NO bevel, so every
+ * edge is sharp; the front face sits at z = DEPTH / 2
+ */
+const DEPTH = 0.24
+const BEVEL = 0
 export const FRONT_Z = DEPTH / 2 + BEVEL
 /**
  * the thaw window's path across the front cap (mark units): down the centre of
@@ -143,9 +146,8 @@ const CAPS_OUT = /* glsl */ `outgoingLight += vec3( 0.93, 0.95, 1.0 ) * ( uFront
 export function buildMark(mobile: boolean, envMap: THREE.Texture | null): Pick<HeroSet, 'pivot' | 'logo' | 'caps' | 'sides' | 'capsU' | 'rim' | 'markAspect'> {
   const logo = frostedLogo({ depth: DEPTH, bevel: BEVEL, frost: 0.46 })
   const { caps, sides } = logo
-  // FULLY frosted: the rounded bevel is sandblasted too — a satin frost a touch
-  // smoother than the faces, so it rolls the light into a soft bright rim
-  // instead of a polished mirror edge
+  // FULLY frosted: the walls are frosted too — a satin frost a touch smoother
+  // than the faces, so the sharp edges read as a fine bright line, not a mirror
   sides.roughness = 0.34
   sides.clearcoat = 0
   sides.dispersion = 0

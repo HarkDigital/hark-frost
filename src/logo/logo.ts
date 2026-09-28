@@ -331,7 +331,8 @@ export function offsetRing(ring: THREE.Vector2[], d: number, out: THREE.Vector2[
 
 /**
  * The mark (or any shapes) extruded with a rounded bevel that rolls INWARD
- * from the outline, like ExtrudeGeometry with bevelOffset = -bevelSize but
+ * from the outline (or none: bevelThickness / bevelSize 0 gives straight
+ * walls and sharp edges), like ExtrudeGeometry with bevelOffset = -bevelSize but
  * free of the spikes three's bevel leaves at sharp corners. The widest point
  * of the solid is exactly the artwork's outline. Non-indexed, centred in z,
  * with ExtrudeGeometry's material groups (0 = front/back caps, 1 = bevels +
@@ -342,13 +343,18 @@ export function extrudeInset(shapes: THREE.Shape[], o: InsetExtrudeOptions): THR
   const { depth, bevelThickness: bt, bevelSize: bs, bevelSegments: S } = o
   // the profile, back cap → back edge → front edge → front cap: (inset, z)
   const prof: [number, number][] = []
-  for (let b = 0; b <= S; b++) {
-    const t = b / S
-    prof.push([bs * (1 - Math.sin((t * Math.PI) / 2)), -depth / 2 - bt * Math.cos((t * Math.PI) / 2)])
-  }
-  for (let b = S; b >= 0; b--) {
-    const t = b / S
-    prof.push([bs * (1 - Math.sin((t * Math.PI) / 2)), depth / 2 + bt * Math.cos((t * Math.PI) / 2)])
+  if (bt <= 0 || bs <= 0 || S < 1) {
+    // no bevel: a straight wall, razor-sharp edges on both faces
+    prof.push([0, -depth / 2], [0, depth / 2])
+  } else {
+    for (let b = 0; b <= S; b++) {
+      const t = b / S
+      prof.push([bs * (1 - Math.sin((t * Math.PI) / 2)), -depth / 2 - bt * Math.cos((t * Math.PI) / 2)])
+    }
+    for (let b = S; b >= 0; b--) {
+      const t = b / S
+      prof.push([bs * (1 - Math.sin((t * Math.PI) / 2)), depth / 2 + bt * Math.cos((t * Math.PI) / 2)])
+    }
   }
   const pos: number[] = []
   const uv: number[] = []
